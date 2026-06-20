@@ -1,0 +1,322 @@
+'use client';
+
+import { useState, useMemo } from 'react';
+import {
+  Users,
+  Building2,
+  UserPlus,
+  Plus,
+  FileSpreadsheet,
+  AlertCircle,
+  HelpCircle,
+  X,
+  Search,
+} from 'lucide-react';
+import PageHeader from '@/components/shared/PageHeader';
+import StatCard from '@/components/shared/StatCard';
+import SearchInput from '@/components/shared/SearchInput';
+import ClientCard from '@/components/clients/ClientCard';
+import ClientForm from '@/components/clients/ClientForm';
+import ClientDetail from '@/components/clients/ClientDetail';
+import ConfirmDialog from '@/components/shared/ConfirmDialog';
+import { Button } from '@/components/ui/button';
+import {
+  useGetClients,
+  useCreateClient,
+  useUpdateClient,
+  useDeleteClient,
+  ClientWithDetails,
+} from '@/hooks/useClients';
+import { toast } from 'sonner';
+
+export default function ClientsPage() {
+  const [search, setSearch] = useState('');
+  const { clients, loading, refetch } = useGetClients(search);
+
+  // Separate query for total counts so stats cards remain stable during search
+  const { clients: allClients, refetch: refetchAllCounts } = useGetClients('');
+
+  // Dialog & drawer states
+  const [isFormOpen, setIsFormOpen] = useState(false);
+  const [isDetailOpen, setIsDetailOpen] = useState(false);
+  const [isDeleteOpen, setIsDeleteOpen] = useState(false);
+
+  const [selectedClient, setSelectedClient] = useState<ClientWithDetails | null>(null);
+  const [clientToDelete, setClientToDelete] = useState<ClientWithDetails | null>(null);
+
+  // Mutation hooks
+  const { create, loading: createLoading } = useCreateClient();
+  const { update, loading: updateLoading } = useUpdateClient();
+  const { remove, loading: deleteLoading } = useDeleteClient();
+
+  const isFormSubmitting = createLoading || updateLoading;
+
+  // Aggregate stats from the full (unfiltered) list
+  const stats = useMemo(() => {
+    const total = allClients.length;
+    const gstinCount = allClients.filter((c) => !!c.gstin).length;
+    
+    // Recent clients (created in the last 30 days)
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+    const recentCount = allClients.filter(
+      (c) => new Date(c.createdAt) >= thirtyDaysAgo
+    ).length;
+
+    return {
+      total,
+      gstinCount,
+      recentCount,
+    };
+  }, [allClients]);
+
+  // Handle open add form
+  const handleAddClient = () => {
+    setSelectedClient(null);
+    setIsFormOpen(true);
+  };
+
+  // Handle view details
+  const handleViewClient = (client: ClientWithDetails) => {
+    setSelectedClient(client);
+    setIsDetailOpen(true);
+  };
+
+  // Handle edit details
+  const handleEditClient = (client: ClientWithDetails) => {
+    setSelectedClient(client);
+    setIsDetailOpen(false);
+    setIsFormOpen(true);
+  };
+
+  // Handle delete trigger
+  const handleDeleteTrigger = (client: ClientWithDetails) => {
+    setClientToDelete(client);
+    setIsDeleteOpen(true);
+  };
+
+  // Handle form submit (save or update, single or bulk CSV list)
+  const handleFormSubmit = async (data: any) => {
+    try {
+      if (Array.isArray(data)) {
+        // Bulk import CSV rows
+        await create(data);
+        toast.success(`Successfully imported ${data.length} clients!`);
+      } else {
+        // Single client save/update
+        if (selectedClient) {
+          await update(selectedClient.id, data);
+          toast.success('Client updated successfully');
+        } else {
+          await create(data);
+          toast.success('Client created successfully');
+        }
+      }
+      setIsFormOpen(false);
+      refetch();
+      refetchAllCounts();
+    } catch (err: any) {
+      console.error(err);
+      toast.error(err.message || 'Failed to save client');
+    }
+  };
+
+  // Handle client delete confirmation
+  const handleDeleteConfirm = async () => {
+    if (!clientToDelete) return;
+    try {
+      await remove(clientToDelete.id);
+      toast.success('Client deleted successfully');
+      setIsDetailOpen(false);
+      refetch();
+      refetchAllCounts();
+    } catch (err: any) {
+      console.error(err);
+      toast.error(err.message || 'Failed to delete client');
+    } finally {
+      setClientToDelete(null);
+    }
+  };
+
+  // Loading Skeleton Grid
+  const renderSkeletons = () => (
+    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+      {[1, 2, 3, 4, 5, 6].map((i) => (
+        <div
+          key={i}
+          className="bg-white dark:bg-slate-900 border border-slate-200/50 dark:border-slate-800/80 rounded-xl p-5 shadow-sm space-y-4 animate-pulse"
+        >
+          <div className="flex justify-between items-start">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-full bg-slate-200 dark:bg-slate-800" />
+              <div className="space-y-2 text-left">
+                <div className="h-3.5 w-28 bg-slate-200 dark:bg-slate-800 rounded" />
+                <div className="h-2.5 w-20 bg-slate-200 dark:bg-slate-850 rounded" />
+              </div>
+            </div>
+            <div className="w-4 h-6 bg-slate-100 dark:bg-slate-850 rounded" />
+          </div>
+          <div className="space-y-2 py-3 border-t border-b border-slate-100 dark:border-slate-850">
+            <div className="h-2.5 w-full bg-slate-100 dark:bg-slate-850 rounded" />
+            <div className="h-2.5 w-5/6 bg-slate-100 dark:bg-slate-850 rounded" />
+            <div className="h-2.5 w-4/6 bg-slate-100 dark:bg-slate-850 rounded" />
+          </div>
+          <div className="flex justify-between items-center pt-1">
+            <div className="h-6 w-20 bg-slate-200 dark:bg-slate-800 rounded-full" />
+            <div className="h-8 w-16 bg-slate-200 dark:bg-slate-800 rounded" />
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+
+  return (
+    <div className="space-y-6">
+      
+      {/* Page Header */}
+      <PageHeader
+        title="Clients"
+        description="Manage your client registry, address profiles, and GST records."
+        action={
+          <Button
+            onClick={handleAddClient}
+            className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold h-10 px-4 gap-1.5 shadow-sm rounded-lg cursor-pointer"
+          >
+            <Plus className="w-4 h-4" />
+            <span>Add Client</span>
+          </Button>
+        }
+      />
+
+      {/* Stats Cards Row */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-5">
+        <StatCard
+          title="Total Clients"
+          value={stats.total}
+          icon={<Users className="w-5 h-5" />}
+        />
+        <StatCard
+          title="GSTIN Registered"
+          value={stats.gstinCount}
+          icon={<Building2 className="w-5 h-5" />}
+        />
+        <StatCard
+          title="Recent Additions"
+          value={stats.recentCount}
+          icon={<UserPlus className="w-5 h-5" />}
+        />
+      </div>
+
+      {/* Toolbar / Search Section */}
+      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4 py-1.5">
+        <SearchInput
+          onChange={setSearch}
+          placeholder="Filter clients by name, GSTIN, email, or city..."
+          className="w-full sm:max-w-md"
+        />
+        {search && (
+          <div className="text-xs text-slate-400 font-semibold text-left">
+            Found {clients.length} matching client{clients.length === 1 ? '' : 's'}
+          </div>
+        )}
+      </div>
+
+      {/* Clients Main Content */}
+      {loading ? (
+        renderSkeletons()
+      ) : clients.length > 0 ? (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+          {clients.map((client) => (
+            <ClientCard
+              key={client.id}
+              client={client}
+              onView={handleViewClient}
+              onEdit={handleEditClient}
+              onDelete={handleDeleteTrigger}
+            />
+          ))}
+        </div>
+      ) : (
+        /* Empty State */
+        <div className="flex flex-col items-center justify-center p-8 sm:p-12 border border-dashed border-slate-200 dark:border-slate-800 rounded-2xl bg-white dark:bg-slate-900 shadow-sm text-center">
+          <div className="w-16 h-16 rounded-2xl bg-emerald-50 dark:bg-emerald-950/20 text-emerald-600 dark:text-emerald-450 flex items-center justify-center mb-4">
+            <Users className="w-8 h-8" />
+          </div>
+          
+          <h3 className="text-base font-bold text-slate-900 dark:text-slate-50 mb-2">
+            {search ? 'No matching clients found' : 'Build your client registry'}
+          </h3>
+          
+          <p className="text-xs text-slate-500 max-w-sm leading-relaxed mb-6">
+            {search
+              ? 'Try refining your search terms or clearing filters to locate your client registry.'
+              : 'Add customer profiles here to speed up invoice drafting, auto-calculate regional GST rates, and track recent invoices.'}
+          </p>
+
+          <div className="flex flex-col sm:flex-row items-center gap-3">
+            {search ? (
+              <Button
+                variant="outline"
+                onClick={() => setSearch('')}
+                className="border-slate-200 text-slate-700 hover:bg-slate-50 font-bold dark:border-slate-850 dark:text-slate-350 dark:hover:bg-slate-805 cursor-pointer h-9 px-4 rounded-lg text-xs"
+              >
+                Clear Search Filter
+              </Button>
+            ) : (
+              <>
+                <Button
+                  onClick={handleAddClient}
+                  className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold h-9 px-5 gap-1.5 shadow-sm rounded-lg cursor-pointer text-xs"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>Add First Client</span>
+                </Button>
+                
+                <Button
+                  variant="outline"
+                  onClick={handleAddClient} // Opens Dialog, can switch to CSV tab
+                  className="border-slate-200 text-slate-650 hover:bg-slate-50 font-bold dark:border-slate-800 dark:text-slate-300 dark:hover:bg-slate-850 cursor-pointer h-9 px-4 gap-1.5 rounded-lg text-xs"
+                >
+                  <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-500" />
+                  <span>Bulk Import CSV</span>
+                </Button>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Add / Edit Client Modal Dialog */}
+      <ClientForm
+        open={isFormOpen}
+        onOpenChange={setIsFormOpen}
+        initialData={selectedClient}
+        onSubmit={handleFormSubmit}
+        isLoading={isFormSubmitting}
+      />
+
+      {/* Client Detail Sidebar Drawer */}
+      <ClientDetail
+        open={isDetailOpen}
+        onOpenChange={setIsDetailOpen}
+        client={selectedClient}
+        onEdit={handleEditClient}
+        onDelete={handleDeleteTrigger}
+      />
+
+      {/* Client Delete Confirmation */}
+      <ConfirmDialog
+        open={isDeleteOpen}
+        onOpenChange={setIsDeleteOpen}
+        title="Delete Customer Profile?"
+        description={`Are you sure you want to delete ${clientToDelete?.name || 'this client'}? This action is permanent and cannot be undone.`}
+        confirmText="Delete Client"
+        cancelText="Cancel"
+        onConfirm={handleDeleteConfirm}
+        variant="danger"
+        isLoading={deleteLoading}
+      />
+
+    </div>
+  );
+}

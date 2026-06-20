@@ -1,0 +1,300 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// Clerk user mapping (synced via webhooks)
+model User {
+  id            String    @id @default(cuid())
+  clerkId       String    @unique // Clerk user ID
+  email         String    @unique
+  name          String?
+  avatar        String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  
+  // Notification preferences
+  emailInvoiceSent        Boolean  @default(true)
+  emailPaymentReceived    Boolean  @default(true)
+  emailInvoiceOverdue     Boolean  @default(true)
+  emailWeeklySummary      Boolean  @default(true)
+  reminderOverdueEnabled  Boolean  @default(true)
+  reminderFrequencyDays   Int      @default(3)
+  reminderMaxCount        Int      @default(3)
+  reminderSubjectTemplate String   @default("Reminder: Invoice {number} for {amount} is overdue")
+  reminderBodyTemplate    String?  @db.Text
+
+  // Relations
+  businesses    Business[]
+  clients       Client[]
+  invoices      Invoice[]
+  items         Item[]
+  subscriptions Subscription?
+}
+
+model Business {
+  id              String   @id @default(cuid())
+  userId          String
+  name            String
+  gstin           String?  // 15 character GSTIN
+  pan             String?  // 10 character PAN
+  address         String?
+  city            String?
+  state           String?  // State code for GST (e.g., "27" for Maharashtra)
+  pincode         String?
+  phone           String?
+  email           String?
+  bankName        String?
+  accountNumber   String?
+  ifscCode        String?
+  upiId           String?
+  logo            String?  // URL to uploaded logo
+  signature       String?  // URL to uploaded signature
+  brandColor      String   @default("#10b981") // Hex color
+  invoicePrefix   String   @default("INV")
+  invoiceNumber   Int      @default(1) // Next invoice number
+  financialYear   String   // e.g., "2026-27"
+  isDefault       Boolean  @default(false)
+  // Defaults & Branding
+  defaultTemplate       String   @default("modern")
+  defaultTerms          String?  @db.Text
+  defaultNotes          String?  @db.Text
+  defaultDueDateDays    Int      @default(30)
+  defaultGstRate        Decimal  @default(18.00) @db.Decimal(5, 2)
+  defaultPlaceOfSupply  String?
+  currency              String   @default("INR")
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  
+  // Relations
+  user            User     @relation(fields: [userId], references: [id])
+  invoices        Invoice[]
+  
+  @@index([userId])
+}
+
+model Client {
+  id              String    @id @default(cuid())
+  userId          String
+  businessId      String?
+  name            String
+  gstin           String?   // Client GSTIN
+  email           String?
+  phone           String?
+  billingAddress  String?
+  billingCity     String?
+  billingState    String?   // State code
+  billingPincode  String?
+  shippingAddress String?
+  shippingCity    String?
+  shippingState   String?
+  shippingPincode String?
+  notes           String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  
+  // Relations
+  user            User      @relation(fields: [userId], references: [id])
+  invoices        Invoice[]
+  
+  @@index([userId])
+}
+
+model Item {
+  id          String   @id @default(cuid())
+  userId      String
+  businessId  String?
+  name        String
+  description String?
+  hsnCode     String?  // HSN/SAC code
+  rate        Decimal  @db.Decimal(10, 2)
+  gstRate     Decimal  @default(18.00) @db.Decimal(5, 2) // Default 18%
+  unit        String   @default("PCS") // PCS, HRS, etc.
+  isService   Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  // Relations
+  user        User     @relation(fields: [userId], references: [id])
+}
+
+model Invoice {
+  id                String   @id @default(cuid())
+  invoiceNumber     String   // Formatted: INV/2026-27/001
+  userId            String
+  businessId        String
+  clientId          String
+  
+  // Invoice settings
+  template          String   @default("modern") // modern, minimal, professional, creative, dark
+  currency          String   @default("INR")
+  exchangeRate      Decimal  @default(1.00) @db.Decimal(10, 4) // For multi-currency
+  
+  // Dates
+  issueDate         DateTime @default(now())
+  dueDate           DateTime
+  
+  // GST & Tax
+  placeOfSupply     String   // State code
+  isInterState      Boolean  @default(false) // true = IGST, false = CGST+SGST
+  reverseCharge     Boolean  @default(false)
+  
+  overallDiscount     Decimal  @default(0.00) @db.Decimal(12, 2)
+  overallDiscountType String   @default("PERCENTAGE")
+  cessRate            Decimal  @default(0.00) @db.Decimal(5, 2)
+  
+  // Totals (stored for performance)
+  subTotal          Decimal  @db.Decimal(12, 2)
+  discountTotal     Decimal  @default(0.00) @db.Decimal(12, 2)
+  taxableAmount     Decimal  @db.Decimal(12, 2)
+  cgstTotal         Decimal  @default(0.00) @db.Decimal(12, 2)
+  sgstTotal         Decimal  @default(0.00) @db.Decimal(12, 2)
+  igstTotal         Decimal  @default(0.00) @db.Decimal(12, 2)
+  cessTotal         Decimal  @default(0.00) @db.Decimal(12, 2)
+  roundOff          Decimal  @default(0.00) @db.Decimal(12, 2)
+  grandTotal        Decimal  @db.Decimal(12, 2)
+  
+  // Additional
+  notes             String?  @db.Text
+  terms             String?  @db.Text
+  customFields      Json?    // [{key: "PO Number", value: "PO-123"}]
+  
+  // Status
+  status            InvoiceStatus @default(DRAFT)
+  
+  // Delivery
+  pdfUrl            String?
+  publicShareId     String?  @unique // For public link sharing
+  sharePassword     String?  // Optional password for public link
+  viewCount         Int      @default(0)
+  
+  // Payment tracking
+  amountPaid        Decimal  @default(0.00) @db.Decimal(12, 2)
+  paidAt            DateTime?
+  paymentNotes      String?
+  
+  // Recurring
+  isRecurring         Boolean  @default(false)
+  isRecurringTemplate Boolean  @default(false)
+  recurringFrequency   String?  // WEEKLY, MONTHLY, QUARTERLY, YEARLY
+  recurringEndDate    DateTime?
+  recurringStartDate  DateTime?
+  parentInvoiceId     String?  // For invoices generated from a recurring template
+  templateName        String?
+  recurringStatus     String   @default("ACTIVE") // ACTIVE, PAUSED, EXPIRED
+  nextDueDate         DateTime?
+  
+  // Reminders
+  lastReminderAt    DateTime?
+  reminderCount     Int      @default(0)
+  reminders         InvoiceReminder[]
+  
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  
+  // Relations
+  user              User      @relation(fields: [userId], references: [id])
+  business          Business  @relation(fields: [businessId], references: [id])
+  client            Client    @relation(fields: [clientId], references: [id])
+  lineItems         InvoiceLineItem[]
+  
+  @@index([userId])
+  @@index([businessId])
+  @@index([clientId])
+  @@index([status])
+  @@index([issueDate])
+}
+
+model InvoiceLineItem {
+  id          String  @id @default(cuid())
+  invoiceId   String
+  itemId      String? // Reference to saved item (optional)
+  
+  // Line item details
+  description String
+  hsnCode     String?
+  quantity    Decimal @db.Decimal(10, 2)
+  unit        String  @default("PCS")
+  rate        Decimal @db.Decimal(10, 2)
+  discount    Decimal @default(0.00) @db.Decimal(10, 2) // Percentage or amount
+  discountType String @default("PERCENTAGE") // PERCENTAGE or AMOUNT
+  
+  // Tax
+  gstRate     Decimal @default(18.00) @db.Decimal(5, 2)
+  cgstAmount  Decimal @default(0.00) @db.Decimal(10, 2)
+  sgstAmount  Decimal @default(0.00) @db.Decimal(10, 2)
+  igstAmount  Decimal @default(0.00) @db.Decimal(10, 2)
+  
+  // Calculated
+  taxableValue Decimal @db.Decimal(10, 2)
+  totalAmount  Decimal @db.Decimal(10, 2)
+  
+  // Relations
+  invoice     Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  
+  @@index([invoiceId])
+}
+
+enum InvoiceStatus {
+  DRAFT
+  SENT
+  PAID
+  OVERDUE
+  CANCELLED
+  PARTIAL
+}
+
+model Subscription {
+  id            String   @id @default(cuid())
+  userId        String   @unique
+  plan          Plan     @default(FREE)
+  status        SubscriptionStatus @default(ACTIVE)
+  
+  // Usage tracking
+  invoicesUsed  Int      @default(0)
+  invoicesLimit Int      @default(5) // 5 for free, 15 for starter, -1 for unlimited
+  
+  // Razorpay
+  razorpaySubscriptionId String?
+  razorpayCustomerId     String?
+  
+  // Billing period
+  currentPeriodStart DateTime?
+  currentPeriodEnd   DateTime?
+  
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  
+  // Relations
+  user          User     @relation(fields: [userId], references: [id])
+}
+
+enum Plan {
+  FREE
+  STARTER
+  PRO
+  PRO_YEARLY
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  CANCELLED
+  PAST_DUE
+  UNPAID
+}
+
+model InvoiceReminder {
+  id          String   @id @default(cuid())
+  invoiceId   String
+  sentAt      DateTime @default(now())
+  subject     String
+  body        String   @db.Text
+  recipient   String
+  
+  invoice     Invoice  @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  @@index([invoiceId])
+}

@@ -1,0 +1,38 @@
+<svg width="100%" height="100%" viewBox="0 0 400 400" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="virbicFront" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#24C7FA"/>
+      <stop offset="100%" stop-color="#1488E6"/>
+    </linearGradient>
+    
+    <linearGradient id="virbicBack" x1="0%" y1="100%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#0A5AA6"/>
+      <stop offset="100%" stop-color="#1488E6"/>
+    </linearGradient>
+
+    <filter id="overlapShadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="-3" dy="5" stdDeviation="4" flood-color="#002244" flood-opacity="0.3"/>
+    </filter>
+  </defs>
+
+  <g transform="translate(10, 10)">
+    <path d="M 60,140 
+             L 190,340 
+             C 200,355 220,355 230,340 
+             L 280,260 
+             L 220,260 
+             L 140,140 
+             Z" 
+          fill="url(#virbicBack)"/>
+
+    <path d="M 360,100 
+             L 220,360 
+             C 210,380 180,380 170,360 
+             L 120,260 
+             L 180,260 
+             L 300,100 
+             Z" 
+          fill="url(#virbicFront)" 
+          filter="url(#overlapShadow)"/>
+  </g>
+</svg>
