@@ -29,6 +29,15 @@ export default async function DashboardPage() {
   if (error || !dbUser) redirect('/sign-in');
   const user = dbUser;
 
+  // Check if onboarding is completed (has at least one business profile)
+  const businesses = await prisma.business.findMany({
+    where: { userId: user.id },
+  });
+
+  if (businesses.length === 0) {
+    redirect('/onboarding');
+  }
+
   // 1. Fetch active invoices
   const invoices = await prisma.invoice.findMany({
     where: {

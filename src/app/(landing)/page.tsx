@@ -25,6 +25,7 @@ import {
 import { motion, AnimatePresence } from 'framer-motion';
 import { buttonVariants } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
+import { useAuth } from '@clerk/nextjs';
 
 // Grayscale marquee items
 const MARQUEE_ITEMS = [
@@ -100,6 +101,9 @@ const TEMPLATE_PREVIEWS = [
 ];
 
 export default function LandingPage() {
+  const { isSignedIn } = useAuth();
+  const getStartedUrl = isSignedIn ? '/dashboard' : '/onboarding';
+
   const [scrolled, setScrolled] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [activeTestimonial, setActiveTestimonial] = useState(0);
@@ -192,7 +196,7 @@ export default function LandingPage() {
             Sign In
           </Link>
           <Link
-            href="/onboarding"
+            href={getStartedUrl}
             className={cn(
               buttonVariants({ variant: 'default', size: 'sm' }),
               "bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg shadow-sm px-4.5 cursor-pointer"
@@ -265,7 +269,7 @@ export default function LandingPage() {
                 Sign In
               </Link>
               <Link
-                href="/onboarding"
+                href={getStartedUrl}
                 onClick={() => setMobileMenuOpen(false)}
                 className={cn(
                   buttonVariants({ variant: 'default', size: 'lg' }),
@@ -351,7 +355,7 @@ export default function LandingPage() {
                 className="flex flex-col sm:flex-row items-stretch sm:items-center gap-4 pt-2"
               >
                 <Link
-                  href="/onboarding"
+                  href={getStartedUrl}
                   className={cn(
                     buttonVariants({ variant: 'default', size: 'lg' }),
                     "bg-emerald-600 hover:bg-emerald-700 text-white shadow-lg shadow-emerald-500/20 font-bold px-7 py-4 rounded-lg flex items-center justify-center gap-2 group transition-all cursor-pointer"
@@ -432,9 +436,9 @@ export default function LandingPage() {
               <motion.div
                 animate={{ y: [0, -10, 0] }}
                 transition={{ duration: 4, repeat: Infinity, ease: 'easeInOut' }}
-                className="absolute -top-6 right-0 bg-sky-500 text-white text-xs font-extrabold py-2 px-3.5 rounded-lg shadow-lg flex items-center gap-1.5 border border-sky-400"
+                className="absolute -top-6 right-0 bg-gradient-to-b from-sky-400 to-sky-600 text-white text-xs font-extrabold py-2 px-3.5 rounded-lg shadow-[0_8px_20px_-4px_rgba(14,165,233,0.4),inset_0_1.5px_0_rgba(255,255,255,0.35),inset_0_-1.5px_0_rgba(0,0,0,0.15)] flex items-center gap-1.5 border border-sky-500/20"
               >
-                <Check className="w-3.5 h-3.5" />
+                <Check className="w-3.5 h-3.5 animate-pulse" />
                 <span>Paid ₹23,600</span>
               </motion.div>
 
@@ -442,9 +446,9 @@ export default function LandingPage() {
               <motion.div
                 animate={{ y: [0, 8, 0] }}
                 transition={{ duration: 5, repeat: Infinity, ease: 'easeInOut', delay: 0.5 }}
-                className="absolute top-1/2 -left-6 bg-violet-600 text-white text-xs font-semibold py-2 px-3.5 rounded-lg shadow-lg flex items-center gap-1.5 border border-violet-500"
+                className="absolute top-1/2 -left-6 bg-gradient-to-b from-violet-500 to-violet-700 text-white text-xs font-semibold py-2 px-3.5 rounded-lg shadow-[0_8px_20px_-4px_rgba(109,40,217,0.4),inset_0_1.5px_0_rgba(255,255,255,0.35),inset_0_-1.5px_0_rgba(0,0,0,0.15)] flex items-center gap-1.5 border border-violet-600/20"
               >
-                <ShieldCheck className="w-3.5 h-3.5" />
+                <ShieldCheck className="w-3.5 h-3.5 text-violet-200" />
                 <span>GST Calculated ✓</span>
               </motion.div>
 
@@ -452,7 +456,7 @@ export default function LandingPage() {
               <motion.div
                 animate={{ y: [0, -7, 0] }}
                 transition={{ duration: 4.5, repeat: Infinity, ease: 'easeInOut', delay: 1 }}
-                className="absolute -bottom-4 left-6 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 text-xs font-semibold py-2 px-3.5 rounded-lg shadow-lg flex items-center gap-1.5 border border-slate-200 dark:border-slate-700"
+                className="absolute -bottom-4 left-6 bg-gradient-to-b from-white to-slate-50 dark:from-slate-800 dark:to-slate-900 text-slate-800 dark:text-slate-100 text-xs font-semibold py-2 px-3.5 rounded-lg shadow-[0_8px_20px_-4px_rgba(0,0,0,0.1),inset_0_1.5px_0_rgba(255,255,255,0.8),inset_0_-1.5px_0_rgba(0,0,0,0.05)] dark:shadow-[0_8px_20px_-4px_rgba(0,0,0,0.3),inset_0_1.5px_0_rgba(255,255,255,0.15),inset_0_-1.5px_0_rgba(0,0,0,0.2)] flex items-center gap-1.5 border border-slate-200/60 dark:border-slate-800/80"
               >
                 <FileText className="w-3.5 h-3.5 text-emerald-500" />
                 <span>PDF Ready ✓</span>
@@ -714,7 +718,7 @@ export default function LandingPage() {
               </p>
             </div>
             <Link
-              href="/onboarding"
+              href={getStartedUrl}
               className="text-sm font-bold text-sky-600 dark:text-sky-400 hover:text-sky-700 dark:hover:text-sky-300 flex items-center gap-1 group"
             >
               <span>Explore All Templates</span>
@@ -780,7 +784,7 @@ export default function LandingPage() {
                 <li className="flex items-center gap-2"><Check className="w-4 h-4 text-emerald-500 flex-shrink-0" /> 1 business profile</li>
               </ul>
               <Link
-                href="/onboarding"
+                href={getStartedUrl}
                 className={cn(
                   buttonVariants({ variant: 'outline' }),
                   "w-full text-center font-bold border-slate-200 hover:bg-slate-50 text-slate-800 dark:border-slate-800 dark:text-slate-200 dark:hover:bg-slate-900 cursor-pointer"
@@ -806,7 +810,7 @@ export default function LandingPage() {
                 <li className="flex items-center gap-2"><Check className="w-4 h-4 text-emerald-500 flex-shrink-0" /> Email delivery</li>
               </ul>
               <Link
-                href="/onboarding"
+                href={getStartedUrl}
                 className={cn(
                   buttonVariants({ variant: 'outline' }),
                   "w-full text-center font-bold border-slate-200 hover:bg-slate-50 text-slate-800 dark:border-slate-800 dark:text-slate-200 dark:hover:bg-slate-900 cursor-pointer"
@@ -845,7 +849,7 @@ export default function LandingPage() {
                 <li className="flex items-center gap-2"><Check className="w-4 h-4 text-white flex-shrink-0" /> Analytics & GSTR reports</li>
               </ul>
               <Link
-                href="/onboarding"
+                href={getStartedUrl}
                 className={cn(
                   buttonVariants({ variant: 'default' }),
                   "w-full text-center bg-white hover:bg-emerald-50 text-emerald-700 shadow-lg font-bold cursor-pointer"
@@ -874,7 +878,7 @@ export default function LandingPage() {
                 <li className="flex items-center gap-2"><Check className="w-4 h-4 text-emerald-500 flex-shrink-0" /> Priority chat support</li>
               </ul>
               <Link
-                href="/onboarding"
+                href={getStartedUrl}
                 className={cn(
                   buttonVariants({ variant: 'outline' }),
                   "w-full text-center font-bold border-slate-200 hover:bg-slate-50 text-slate-800 dark:border-slate-800 dark:text-slate-200 dark:hover:bg-slate-900 cursor-pointer"
@@ -990,7 +994,7 @@ export default function LandingPage() {
 
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4 pt-4">
             <Link
-              href="/onboarding"
+              href={getStartedUrl}
               className={cn(
                 buttonVariants({ variant: 'default', size: 'lg' }),
                 "w-full sm:w-auto bg-white hover:bg-emerald-50 text-emerald-700 shadow-xl shadow-emerald-700/20 font-bold px-8 py-3.5 rounded-lg cursor-pointer"
@@ -1034,7 +1038,7 @@ export default function LandingPage() {
               <li><a href="#features" className="hover:text-sky-400 transition-colors">Features</a></li>
               <li><a href="#templates" className="hover:text-sky-400 transition-colors">Templates</a></li>
               <li><a href="#pricing" className="hover:text-sky-400 transition-colors">Pricing</a></li>
-              <li><Link href="/onboarding" className="hover:text-sky-400 transition-colors">Get Started</Link></li>
+              <li><Link href={getStartedUrl} className="hover:text-sky-400 transition-colors">Get Started</Link></li>
             </ul>
           </div>
 

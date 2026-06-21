@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { formatCurrency, formatDate } from '@/lib/helpers';
+import { sendInvoiceEmail } from '@/lib/email-service';
 
 export async function GET(request: NextRequest) {
   try {
@@ -100,8 +101,14 @@ Phone: ${invoice.business.phone || 'N/A'}`;
 
         const recipient = invoice.client.email || 'no-email@client.com';
 
-        // 1. Mock email send (simulate)
-        console.log(`[MOCK EMAIL SENT] To: ${recipient} | Subject: ${subject}`);
+        // 1. Send real email reminder
+        try {
+          const htmlMessage = body.replace(/\n/g, '<br />');
+          await sendInvoiceEmail(invoice.id, recipient, subject, htmlMessage);
+        } catch (emailErr: any) {
+          console.error(`[CRON REMINDERS] Failed to send email for invoice ${invoice.id} to ${recipient}:`, emailErr.message);
+          continue; // Skip DB updates if send failed
+        }
 
         // 2. Create Audit Log in database
         await prisma.invoiceReminder.create({

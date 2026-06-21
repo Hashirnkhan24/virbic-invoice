@@ -6,8 +6,9 @@ import {
   calculateLineItemTotal,
   calculateInvoiceTotals,
 } from '@/lib/tax-engine';
-import { generatePublicShareId } from '@/lib/helpers';
+import { generatePublicShareId, formatCurrency } from '@/lib/helpers';
 import { getAuthUser } from '@/lib/auth';
+import { sendInvoiceEmail } from '@/lib/email-service';
 
 // Zod schema for invoice line item validation
 const invoiceLineItemSchema = z.object({
@@ -186,6 +187,28 @@ export async function POST(request: NextRequest) {
 
       return invoice;
     });
+
+    // 7. Auto-send email to client if invoice status is SENT and client has an email
+    if (createdInvoice.status === 'SENT' && client.email) {
+      try {
+        const amountStr = formatCurrency(Number(createdInvoice.grandTotal), createdInvoice.currency);
+        const origin = request.headers.get('origin') || process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
+        const shareLink = `${origin}/i/${createdInvoice.publicShareId}`;
+        
+        const subject = `Invoice ${createdInvoice.invoiceNumber} from ${business.name}`;
+        const message = 
+          `Hello ${client.name},<br /><br />` +
+          `Please find attached our invoice ${createdInvoice.invoiceNumber} for ${amountStr}.<br /><br />` +
+          `You can also view and pay the invoice online here: <a href="${shareLink}">${shareLink}</a><br /><br />` +
+          `Thank you for your business!<br /><br />` +
+          `Best regards,<br />` +
+          `${business.name}`;
+
+        await sendInvoiceEmail(createdInvoice.id, client.email, subject, message);
+      } catch (emailErr: any) {
+        console.error('[INVOICE POST API] Failed to auto-send email on creation:', emailErr.message);
+      }
+    }
 
     return NextResponse.json({ invoice: createdInvoice }, { status: 201 });
   } catch (error: any) {

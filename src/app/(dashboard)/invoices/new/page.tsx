@@ -664,7 +664,7 @@ export default function NewInvoicePage() {
 
             {/* Line Items Grid layout */}
             <div className="overflow-x-auto pb-4 -mx-5 px-5 scrollbar-thin">
-              <div className="space-y-4 pr-3 min-w-[800px] lg:min-w-0">
+              <div className="space-y-4 pr-3 min-w-[880px]">
                 <AnimatePresence initial={false}>
                   {formState.lineItems.map((item, idx) => {
                     const qty = item.quantity;
