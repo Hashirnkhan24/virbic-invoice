@@ -9,18 +9,20 @@ import {
 import { generatePublicShareId, formatCurrency } from '@/lib/helpers';
 import { getAuthUser } from '@/lib/auth';
 import { sendInvoiceEmail } from '@/lib/email-service';
+import { syncClientCounters } from '@/lib/db/invoice-hooks';
+import { logClientActivity } from '@/lib/db/client-analytics';
 
 // Zod schema for invoice line item validation
 const invoiceLineItemSchema = z.object({
   itemId: z.string().optional().nullable(),
   description: z.string().min(1, 'Item description is required'),
   hsnCode: z.string().optional().nullable(),
-  quantity: z.number().positive('Quantity must be greater than 0'),
+  quantity: z.coerce.number().positive('Quantity must be greater than 0'),
   unit: z.string().default('PCS'),
-  rate: z.number().min(0, 'Rate must be greater than or equal to 0'),
-  discount: z.number().default(0),
+  rate: z.coerce.number().min(0, 'Rate must be greater than or equal to 0'),
+  discount: z.coerce.number().default(0),
   discountType: z.enum(['PERCENTAGE', 'AMOUNT']).default('PERCENTAGE'),
-  gstRate: z.number().default(18),
+  gstRate: z.coerce.number().default(18),
 });
 
 // Zod schema for invoice validation
@@ -30,7 +32,7 @@ const invoiceSchema = z.object({
   invoiceNumber: z.string().min(1, 'Invoice number is required'),
   template: z.string().default('modern'),
   currency: z.string().default('INR'),
-  exchangeRate: z.number().default(1),
+  exchangeRate: z.coerce.number().default(1),
   issueDate: z.string().transform((val) => new Date(val)),
   dueDate: z.string().transform((val) => new Date(val)),
   placeOfSupply: z.string().min(1, 'Place of supply is required'),
@@ -39,9 +41,9 @@ const invoiceSchema = z.object({
   terms: z.string().optional().nullable(),
   customFields: z.array(z.object({ key: z.string(), value: z.string() })).optional().default([]),
   status: z.enum(['DRAFT', 'SENT', 'PAID', 'OVERDUE', 'CANCELLED', 'PARTIAL']).default('DRAFT'),
-  overallDiscount: z.number().default(0),
+  overallDiscount: z.coerce.number().default(0),
   overallDiscountType: z.enum(['PERCENTAGE', 'AMOUNT']).default('PERCENTAGE'),
-  cessRate: z.number().default(0),
+  cessRate: z.coerce.number().default(0),
   lineItems: z.array(invoiceLineItemSchema).min(1, 'At least one line item is required'),
 });
 
@@ -209,6 +211,19 @@ export async function POST(request: NextRequest) {
         console.error('[INVOICE POST API] Failed to auto-send email on creation:', emailErr.message);
       }
     }
+    // Sync client counters and log activity
+    try {
+      await syncClientCounters(createdInvoice.clientId, user.id);
+      await logClientActivity({
+        clientId: createdInvoice.clientId,
+        userId: user.id,
+        action: 'INVOICE_CREATED',
+        details: `Invoice ${createdInvoice.invoiceNumber} created for ${formatCurrency(Number(createdInvoice.grandTotal), createdInvoice.currency)}`,
+        amount: Number(createdInvoice.grandTotal),
+      });
+    } catch (syncErr) {
+      console.error('[INVOICE POST API] Failed to sync client counters or log activity:', syncErr);
+    }
 
     return NextResponse.json({ invoice: createdInvoice }, { status: 201 });
   } catch (error: any) {
@@ -239,10 +254,22 @@ export async function GET(request: NextRequest) {
     const search = searchParams.get('search');
     const dateFrom = searchParams.get('dateFrom');
     const dateTo = searchParams.get('dateTo');
+    let businessId = searchParams.get('businessId');
+    if (businessId) {
+      businessId = businessId.replace(/^"|"$/g, '');
+      if (businessId === 'null' || businessId === 'undefined') {
+        businessId = null;
+      }
+    }
     const page = parseInt(searchParams.get('page') || '1', 10);
     const limit = parseInt(searchParams.get('limit') || '10', 10);
 
     const where: any = { userId: user.id };
+
+    // Filter by business profile
+    if (businessId && businessId !== 'all') {
+      where.businessId = businessId;
+    }
 
     // Filter by status (unless 'ALL')
     if (status !== 'ALL') {

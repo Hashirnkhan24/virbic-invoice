@@ -56,11 +56,45 @@ export function useInvoiceForm(initialInvoice?: any) {
   const { businesses, loading: loadingBusinesses } = useGetBusinesses();
   const [activeBusinessId] = useLocalStorage<string | null>('active_business_id', null);
 
+  // Initial form values
+  const [formState, setFormState] = useState<InvoiceFormState>(() => {
+    // Initial dummy state, populated in useEffect once businesses load
+    return {
+      businessId: '',
+      clientId: '',
+      invoiceNumber: '',
+      template: 'modern',
+      currency: 'INR',
+      exchangeRate: 1,
+      issueDate: new Date(),
+      dueDate: new Date(),
+      placeOfSupply: '',
+      reverseCharge: false,
+      notes: '',
+      terms: '',
+      customFields: [],
+      overallDiscount: 0,
+      overallDiscountType: 'PERCENTAGE',
+      cessRate: 0,
+      lineItems: [{
+        description: '',
+        hsnCode: '',
+        quantity: 1,
+        unit: 'PCS',
+        rate: 0,
+        discount: 0,
+        discountType: 'PERCENTAGE',
+        gstRate: 18,
+      }],
+    };
+  });
+
   // Active business resolver
   const activeBusiness = useMemo(() => {
     if (businesses.length === 0) return null;
-    return businesses.find((b) => b.id === activeBusinessId) || businesses.find((b) => b.isDefault) || businesses[0];
-  }, [businesses, activeBusinessId]);
+    const targetId = formState.businessId || activeBusinessId;
+    return businesses.find((b) => b.id === targetId) || businesses.find((b) => b.isDefault) || businesses[0];
+  }, [businesses, formState.businessId, activeBusinessId]);
 
   // Initial form values
   const initialFormState = useCallback((business: any): InvoiceFormState => {
@@ -121,11 +155,18 @@ export function useInvoiceForm(initialInvoice?: any) {
       overallDiscount: 0,
       overallDiscountType: 'PERCENTAGE',
       cessRate: 0,
-      lineItems: [{ ...DEFAULT_LINE_ITEM }],
+      lineItems: [{
+        description: '',
+        hsnCode: '',
+        quantity: 1,
+        unit: 'PCS',
+        rate: 0,
+        discount: 0,
+        discountType: 'PERCENTAGE',
+        gstRate: 18,
+      }],
     };
   }, [initialInvoice]);
-
-  const [formState, setFormState] = useState<InvoiceFormState>(() => initialFormState(null));
   const [isDraftLoaded, setIsDraftLoaded] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [lastSaved, setLastSaved] = useState<Date | null>(null);
@@ -229,6 +270,29 @@ export function useInvoiceForm(initialInvoice?: any) {
   }, [formState]);
 
   // Actions
+  const setBusiness = useCallback((businessId: string) => {
+    const business = businesses.find((b) => b.id === businessId);
+    if (!business) return;
+
+    setFormState((prev) => {
+      const today = prev.issueDate || new Date();
+      const prefix = business.invoicePrefix || 'INV';
+      const number = business.invoiceNumber || 1;
+      const fy = business.financialYear || getFinancialYear(today);
+      const invoiceNumber = formatInvoiceNumber(prefix, number, fy);
+      const placeOfSupply = business.state || prev.placeOfSupply;
+      const currency = business.currency || prev.currency || 'INR';
+
+      return {
+        ...prev,
+        businessId,
+        invoiceNumber,
+        placeOfSupply,
+        currency,
+      };
+    });
+  }, [businesses]);
+
   const setClient = useCallback((clientId: string, clientGstin?: string | null, clientState?: string | null) => {
     setFormState((prev) => {
       let placeOfSupply = prev.placeOfSupply;
@@ -355,6 +419,7 @@ export function useInvoiceForm(initialInvoice?: any) {
   return {
     formState,
     activeBusiness,
+    businesses,
     isInterState,
     totals,
     isValid,
@@ -362,6 +427,7 @@ export function useInvoiceForm(initialInvoice?: any) {
     lastSaved,
     actions: {
       setClient,
+      setBusiness,
       addLineItem,
       removeLineItem,
       updateLineItem,

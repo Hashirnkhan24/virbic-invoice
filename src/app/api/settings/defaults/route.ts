@@ -7,11 +7,11 @@ import { getAuthUser } from '@/lib/auth';
 
 const defaultsSchema = z.object({
   businessId: z.string().min(1, 'Business ID is required'),
-  defaultDueDateDays: z.number().int().min(0),
-  defaultGstRate: z.number().min(0).max(100),
+  defaultDueDateDays: z.coerce.number().int().min(0),
+  defaultGstRate: z.coerce.number().min(0).max(100),
   defaultPlaceOfSupply: z.string().optional().nullable(),
   invoicePrefix: z.string().max(10),
-  invoiceNumber: z.number().int().min(1),
+  invoiceNumber: z.coerce.number().int().min(1),
   currency: z.string().min(1),
 });
 

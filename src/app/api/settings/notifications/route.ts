@@ -6,13 +6,13 @@ import { getAuthUser } from '@/lib/auth';
 
 
 const notificationsSchema = z.object({
-  emailInvoiceSent: z.boolean(),
-  emailPaymentReceived: z.boolean(),
-  emailInvoiceOverdue: z.boolean(),
-  emailWeeklySummary: z.boolean(),
-  reminderOverdueEnabled: z.boolean(),
-  reminderFrequencyDays: z.number().int().min(1),
-  reminderMaxCount: z.number().int().min(1),
+  emailInvoiceSent: z.coerce.boolean(),
+  emailPaymentReceived: z.coerce.boolean(),
+  emailInvoiceOverdue: z.coerce.boolean(),
+  emailWeeklySummary: z.coerce.boolean(),
+  reminderOverdueEnabled: z.coerce.boolean(),
+  reminderFrequencyDays: z.coerce.number().int().min(1),
+  reminderMaxCount: z.coerce.number().int().min(1),
   reminderSubjectTemplate: z.string().optional(),
   reminderBodyTemplate: z.string().optional().nullable(),
 });

@@ -23,8 +23,12 @@ import { formatCurrency, formatDate } from '@/lib/helpers';
 import { convertCurrency } from '@/lib/currency';
 import CurrencyAmount from '@/components/shared/CurrencyAmount';
 import { redirect } from 'next/navigation';
+import { cookies } from 'next/headers';
+import { BusinessHubItem } from '@/components/dashboard/BusinessHub';
 
-export default async function DashboardPage() {
+export default async function DashboardPage(props: {
+  searchParams: Promise<{ businesses?: string }>;
+}) {
   const { error, dbUser } = await getAuthUser();
   if (error || !dbUser) redirect('/sign-in');
   const user = dbUser;
@@ -38,8 +42,8 @@ export default async function DashboardPage() {
     redirect('/onboarding');
   }
 
-  // 1. Fetch active invoices
-  const invoices = await prisma.invoice.findMany({
+  // 1. Fetch ALL invoices of the user first (to compute individual business stats and filter in-memory)
+  const allInvoices = await prisma.invoice.findMany({
     where: {
       userId: user.id,
     },
@@ -55,10 +59,9 @@ export default async function DashboardPage() {
     },
   });
 
-  const totalInvoices = invoices.length;
-
   // ── EMPTY STATE FOR NEW USERS ──
-  if (totalInvoices === 0) {
+  // Show welcome onboarding screen ONLY if the user has literally 0 invoices across ALL their businesses
+  if (allInvoices.length === 0) {
     return (
       <div className="min-h-[80vh] flex flex-col items-center justify-center p-6 text-center space-y-6 max-w-md mx-auto text-left">
         {/* Onboarding Welcome Illustration */}
@@ -88,7 +91,39 @@ export default async function DashboardPage() {
     );
   }
 
-  // 2. COMPUTE STATS
+  // Read active business profile ID from cookie or fallback to default
+  const cookieStore = await cookies();
+  let activeBusinessId = cookieStore.get('active_business_id')?.value;
+
+  // Auto-resolve activeBusinessId if not set or invalid
+  if (!activeBusinessId) {
+    const defaultBusiness = businesses.find((b) => b.isDefault) || businesses[0];
+    activeBusinessId = defaultBusiness ? defaultBusiness.id : undefined;
+  }
+
+  // Determine selected business IDs for main stats calculations
+  let selectedBusinessIds: string[] = [];
+  if (activeBusinessId === 'all') {
+    selectedBusinessIds = businesses.map((b) => b.id);
+  } else if (activeBusinessId) {
+    const hasBusiness = businesses.some((b) => b.id === activeBusinessId);
+    if (hasBusiness) {
+      selectedBusinessIds = [activeBusinessId];
+    } else {
+      // Invalid business ID context: fallback to default/first
+      const defaultBusiness = businesses.find((b) => b.isDefault) || businesses[0];
+      activeBusinessId = defaultBusiness ? defaultBusiness.id : undefined;
+      if (activeBusinessId) {
+        selectedBusinessIds = [activeBusinessId];
+      }
+    }
+  }
+
+  // Filter invoices matching selected businesses for the main dashboard calculations
+  const invoices = allInvoices.filter((inv) => selectedBusinessIds.includes(inv.businessId));
+  const totalInvoices = invoices.length;
+
+  // 2. COMPUTE STATS FOR MAIN VIEW
   const today = new Date();
   const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
   const startOfLastMonth = new Date(today.getFullYear(), today.getMonth() - 1, 1);
@@ -198,6 +233,38 @@ export default async function DashboardPage() {
     { name: 'Draft', value: draftCount, color: '#64748b' }, // slate
   ];
 
+  // Compute stats for each business profile for the Business Hub widget
+  const businessesWithStats: BusinessHubItem[] = businesses.map((biz) => {
+    const bizInvoices = allInvoices.filter((inv) => inv.businessId === biz.id);
+    
+    // Compute Outstanding Amount for this business
+    const outstanding = bizInvoices
+      .filter((inv) => inv.status === 'SENT' || inv.status === 'PARTIAL' || inv.status === 'OVERDUE')
+      .reduce((sum, inv) => {
+        const unpaidValue = Number(inv.grandTotal) - Number(inv.amountPaid);
+        return sum + convertCurrency(unpaidValue, inv.currency, 'INR');
+      }, 0);
+      
+    // Compute Month-to-Date paid revenue for this business
+    const revenue = bizInvoices
+      .filter((inv) =>
+        (inv.status === 'PAID' || inv.status === 'PARTIAL') &&
+        new Date(inv.paidAt || inv.updatedAt) >= startOfMonth
+      )
+      .reduce((sum, inv) => sum + convertCurrency(Number(inv.amountPaid), inv.currency, 'INR'), 0);
+      
+    return {
+      id: biz.id,
+      name: biz.name,
+      logo: biz.logo,
+      currency: biz.currency,
+      isDefault: biz.isDefault,
+      isActiveProfile: biz.id === activeBusinessId,
+      outstandingAmount: outstanding,
+      monthlyRevenue: revenue,
+    };
+  });
+
   // 4. RECENT INVOICES (Last 5)
   const recentInvoices = invoices.slice(0, 5);
 
@@ -220,6 +287,7 @@ export default async function DashboardPage() {
           </Button>
         </Link>
       </div>
+
 
       {/* ── Overdue Reminders Alert Card ── */}
       {overdueCount > 0 && (
@@ -302,7 +370,7 @@ export default async function DashboardPage() {
             </h3>
             <Link
               href="/invoices"
-              className="text-xs font-bold text-emerald-600 dark:text-emerald-450 hover:underline flex items-center gap-0.5"
+              className="text-xs font-bold text-emerald-600 dark:text-emerald-455 hover:underline flex items-center gap-0.5"
             >
               <span>View All Invoices</span>
               <ArrowRight className="w-3 h-3" />
@@ -321,62 +389,73 @@ export default async function DashboardPage() {
                 </tr>
               </thead>
               <tbody className="text-xs">
-                {recentInvoices.map((inv) => (
-                  <tr
-                    key={inv.id}
-                    className="border-b border-slate-200/40 dark:border-slate-800/40 hover:bg-slate-50/40 dark:hover:bg-slate-800/10 transition-colors"
-                  >
-                    <td className="py-3 px-4 font-mono font-bold text-slate-850 dark:text-slate-150">
-                      <Link href={`/invoices/${inv.id}`} className="hover:text-emerald-500 hover:underline">
-                        {inv.invoiceNumber}
-                      </Link>
-                    </td>
-                    <td className="py-3 px-4 font-semibold text-slate-700 dark:text-slate-350">
-                      {inv.client.name}
-                    </td>
-                    <td className="py-3 px-4 text-slate-450">
-                      {formatDate(inv.issueDate)}
-                    </td>
-                    <td className="py-3 px-4 text-right font-bold text-slate-850 dark:text-slate-150">
-                      <CurrencyAmount amount={Number(inv.grandTotal)} currency={inv.currency} />
-                    </td>
-                    <td className="py-3 px-4 text-center">
-                      <StatusBadge status={inv.status} />
+                {recentInvoices.length === 0 ? (
+                  <tr>
+                    <td colSpan={5} className="py-8 text-center text-slate-400 italic">
+                      No invoices found for the selected business entities.
                     </td>
                   </tr>
-                ))}
+                ) : (
+                  recentInvoices.map((inv) => (
+                    <tr
+                      key={inv.id}
+                      className="border-b border-slate-200/40 dark:border-slate-800/40 hover:bg-slate-50/40 dark:hover:bg-slate-800/10 transition-colors"
+                    >
+                      <td className="py-3 px-4 font-mono font-bold text-slate-850 dark:text-slate-150">
+                        <Link href={`/invoices/${inv.id}`} className="hover:text-emerald-500 hover:underline">
+                          {inv.invoiceNumber}
+                        </Link>
+                      </td>
+                      <td className="py-3 px-4 font-semibold text-slate-700 dark:text-slate-350">
+                        {inv.client.name}
+                      </td>
+                      <td className="py-3 px-4 text-slate-450">
+                        {formatDate(inv.issueDate)}
+                      </td>
+                      <td className="py-3 px-4 text-right font-bold text-slate-850 dark:text-slate-150">
+                        <CurrencyAmount amount={Number(inv.grandTotal)} currency={inv.currency} />
+                      </td>
+                      <td className="py-3 px-4 text-center">
+                        <StatusBadge status={inv.status} />
+                      </td>
+                    </tr>
+                  ))
+                )}
               </tbody>
             </table>
           </div>
         </div>
 
-        {/* Right: Quick Actions Card */}
-        <div className="space-y-3">
-          <h3 className="text-sm font-bold text-slate-850 dark:text-slate-100">
-            Quick Actions
-          </h3>
-          <Card className="p-5 border border-slate-200/60 dark:border-slate-800/60 bg-white dark:bg-slate-900 rounded-xl shadow-sm space-y-3">
-            <Link href="/invoices/new" className="block w-full">
-              <Button className="w-full h-10 font-bold text-xs bg-emerald-500 hover:bg-emerald-600 text-white cursor-pointer justify-start px-4">
-                <Plus className="w-4 h-4 mr-2 shrink-0" />
-                <span>Create New Invoice</span>
-              </Button>
-            </Link>
-            
-            <Link href="/clients" className="block w-full">
-              <Button variant="outline" className="w-full h-10 font-bold text-xs border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-250 cursor-pointer justify-start px-4">
-                <Users className="w-4 h-4 mr-2 shrink-0 text-indigo-500" />
-                <span>Manage Customers</span>
-              </Button>
-            </Link>
+        {/* Right Sidebar: Quick Actions */}
+        <div className="space-y-6">
 
-            <Link href="/reports" className="block w-full">
-              <Button variant="outline" className="w-full h-10 font-bold text-xs border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-250 cursor-pointer justify-start px-4">
-                <BarChart3 className="w-4 h-4 mr-2 shrink-0 text-blue-500" />
-                <span>View Tax Reports</span>
-              </Button>
-            </Link>
-          </Card>
+          <div className="space-y-3">
+            <h3 className="text-sm font-bold text-slate-855 dark:text-slate-100">
+              Quick Actions
+            </h3>
+            <Card className="p-5 border border-slate-200/60 dark:border-slate-800/60 bg-white dark:bg-slate-900 rounded-xl shadow-sm space-y-3">
+              <Link href="/invoices/new" className="block w-full">
+                <Button className="w-full h-10 font-bold text-xs bg-emerald-500 hover:bg-emerald-600 text-white cursor-pointer justify-start px-4">
+                  <Plus className="w-4 h-4 mr-2 shrink-0" />
+                  <span>Create New Invoice</span>
+                </Button>
+              </Link>
+              
+              <Link href="/clients" className="block w-full">
+                <Button variant="outline" className="w-full h-10 font-bold text-xs border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-250 cursor-pointer justify-start px-4">
+                  <Users className="w-4 h-4 mr-2 shrink-0 text-indigo-500" />
+                  <span>Manage Customers</span>
+                </Button>
+              </Link>
+
+              <Link href="/reports" className="block w-full">
+                <Button variant="outline" className="w-full h-10 font-bold text-xs border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-250 cursor-pointer justify-start px-4">
+                  <BarChart3 className="w-4 h-4 mr-2 shrink-0 text-blue-500" />
+                  <span>View Tax Reports</span>
+                </Button>
+              </Link>
+            </Card>
+          </div>
         </div>
       </div>
     </div>

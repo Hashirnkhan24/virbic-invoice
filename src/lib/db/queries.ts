@@ -41,10 +41,41 @@ export async function createClient(data: Omit<Prisma.ClientUncheckedCreateInput,
   });
 }
 
-export async function getClientsByUser(userId: string) {
+export async function getClientsByUser(
+  userId: string,
+  options?: {
+    includeDeleted?: boolean;
+    sortBy?: 'revenue' | 'outstanding' | 'recent' | 'name';
+    minOutstanding?: boolean;
+  }
+) {
+  const where: Prisma.ClientWhereInput = {
+    userId,
+  };
+
+  if (!options?.includeDeleted) {
+    where.isDeleted = false;
+  }
+
+  if (options?.minOutstanding) {
+    where.totalOutstanding = { gt: 0 };
+  }
+
+  let orderBy: Prisma.ClientOrderByWithRelationInput = { name: 'asc' };
+
+  if (options?.sortBy === 'revenue') {
+    orderBy = { totalBilled: 'desc' };
+  } else if (options?.sortBy === 'outstanding') {
+    orderBy = { totalOutstanding: 'desc' };
+  } else if (options?.sortBy === 'recent') {
+    orderBy = { lastInvoiceDate: 'desc' };
+  } else if (options?.sortBy === 'name') {
+    orderBy = { name: 'asc' };
+  }
+
   return prisma.client.findMany({
-    where: { userId },
-    orderBy: { name: 'asc' },
+    where,
+    orderBy,
   });
 }
 

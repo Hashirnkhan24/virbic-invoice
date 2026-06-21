@@ -17,6 +17,7 @@ import {
   FileSpreadsheet,
   Clock,
   ChevronDown,
+  AlertCircle,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -26,6 +27,13 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import {
   useInvoiceForm,
   LineItemState,
@@ -48,6 +56,7 @@ export default function EditInvoiceClient({ initialInvoice }: { initialInvoice: 
   const {
     formState,
     activeBusiness,
+    businesses,
     isInterState,
     totals,
     isValid,
@@ -78,6 +87,7 @@ export default function EditInvoiceClient({ initialInvoice }: { initialInvoice: 
 
   // Overall saving states (submitting)
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [showValidationErrors, setShowValidationErrors] = useState(false);
 
   // Listen for clicks outside selectors to close dropdowns
   useEffect(() => {
@@ -189,7 +199,17 @@ export default function EditInvoiceClient({ initialInvoice }: { initialInvoice: 
   // Submit edited invoice
   const handleSaveInvoice = async (invoiceStatus: 'DRAFT' | 'SENT') => {
     if (!isValid) {
-      toast.error('Please fill in all required fields (Client, Invoice Number, and Line Items).');
+      setShowValidationErrors(true);
+      toast.error('Please fill in all required fields highlighted in red.');
+      setTimeout(() => {
+        const firstErrorEl = document.querySelector('.border-red-500');
+        if (firstErrorEl) {
+          firstErrorEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          if (firstErrorEl instanceof HTMLInputElement) {
+            firstErrorEl.focus();
+          }
+        }
+      }, 100);
       return;
     }
 
@@ -341,29 +361,49 @@ export default function EditInvoiceClient({ initialInvoice }: { initialInvoice: 
           <div className="bg-white dark:bg-slate-900 border border-slate-200/60 dark:border-slate-800/80 rounded-xl p-5 shadow-sm space-y-6">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               
-              {/* BILL FROM */}
+              {/* BILL FROM (Select business) */}
               <div className="space-y-3">
                 <div className="flex justify-between items-center pb-1.5 border-b border-slate-100 dark:border-slate-855">
                   <span className="text-xs font-black text-slate-800 dark:text-slate-250 uppercase tracking-wider">
-                    Bill From (Business)
+                    Bill From (Business) <span className="text-red-500">*</span>
                   </span>
                 </div>
 
-                {activeBusiness ? (
-                  <div className="text-left space-y-1 p-3 rounded-xl border border-slate-150 dark:border-slate-850 bg-slate-50/40 dark:bg-slate-950/20">
-                    <p className="text-xs font-bold text-slate-850 dark:text-slate-100">{activeBusiness.name}</p>
-                    {activeBusiness.gstin && (
-                      <p className="text-[10px] font-mono text-slate-450 font-semibold">GSTIN: {activeBusiness.gstin}</p>
-                    )}
-                    <p className="text-[10px] text-slate-450 leading-relaxed truncate" title={activeBusiness.address || ''}>
-                      {activeBusiness.address || 'No Address Profile Set'}
-                    </p>
-                  </div>
-                ) : (
-                  <div className="text-left p-3 border border-dashed border-slate-200 dark:border-slate-800 rounded-xl text-slate-450 text-xs">
-                    No active business profile.
-                  </div>
-                )}
+                <div className="space-y-3">
+                  <Select
+                    value={formState.businessId}
+                    onValueChange={(val) => actions.setBusiness(val || '')}
+                  >
+                    <SelectTrigger className="w-full text-xs font-semibold border-slate-350 dark:border-slate-800 bg-white dark:bg-slate-950 rounded-xl shadow-sm h-10">
+                      <span className="truncate">
+                        {activeBusiness ? activeBusiness.name : "Select business profile..."}
+                      </span>
+                    </SelectTrigger>
+                    <SelectContent>
+                      {businesses.map((biz) => (
+                        <SelectItem key={biz.id} value={biz.id} className="text-xs font-semibold cursor-pointer">
+                          {biz.name} {biz.gstin ? `(${biz.gstin})` : ''}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+
+                  {activeBusiness ? (
+                    <div className="text-left space-y-1 p-3 rounded-xl border border-slate-150 dark:border-slate-850 bg-slate-50/40 dark:bg-slate-950/20 text-xs leading-normal">
+                      <p className="font-bold text-slate-850 dark:text-slate-100">{activeBusiness.name}</p>
+                      {activeBusiness.gstin && (
+                        <p className="text-[10px] font-mono text-slate-450 font-semibold">GSTIN: {activeBusiness.gstin}</p>
+                      )}
+                      <p className="text-[10px] text-slate-450 leading-relaxed truncate" title={activeBusiness.address || ''}>
+                        {activeBusiness.address || 'No Address Profile Set'}
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="text-left p-3 border border-dashed border-slate-200 dark:border-slate-800 rounded-xl text-slate-450 text-xs">
+                      No active business profile.
+                    </div>
+                  )}
+                </div>
               </div>
 
               {/* BILL TO */}
@@ -397,9 +437,20 @@ export default function EditInvoiceClient({ initialInvoice }: { initialInvoice: 
                         setClientSearch('');
                         setShowClientDropdown(true);
                       }}
-                      className="pl-10 pr-4 py-2 border-slate-350 dark:border-slate-800 dark:bg-slate-950 text-sm focus:ring-2 focus:ring-sky-500/20"
+                      className={cn(
+                        "pl-10 pr-4 py-2 text-sm focus:ring-2 dark:bg-slate-950",
+                        showValidationErrors && !formState.clientId
+                          ? "border-red-500 focus:border-red-500 focus:ring-red-500/20"
+                          : "border-slate-350 dark:border-slate-800 focus:ring-sky-500/20"
+                      )}
                     />
                   </div>
+                  {showValidationErrors && !formState.clientId && (
+                    <p className="text-[10px] text-red-500 font-bold mt-1 animate-fade-in flex items-center gap-1">
+                      <AlertCircle className="w-3 h-3 shrink-0" />
+                      <span>Please select a customer.</span>
+                    </p>
+                  )}
 
                   {showClientDropdown && (
                     <div className="absolute left-0 right-0 z-20 mt-1 max-h-48 overflow-y-auto bg-white dark:bg-slate-905 border border-slate-200 dark:border-slate-800 rounded-xl shadow-lg">
@@ -456,13 +507,26 @@ export default function EditInvoiceClient({ initialInvoice }: { initialInvoice: 
               
               {/* Invoice Number */}
               <div>
-                <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Invoice Number</label>
+                <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">
+                  Invoice Number <span className="text-red-500">*</span>
+                </label>
                 <Input
                   type="text"
                   value={formState.invoiceNumber}
                   onChange={(e) => actions.updateField('invoiceNumber', e.target.value)}
-                  className="h-9 text-sm border-slate-350 dark:border-slate-800 dark:bg-slate-950 font-mono uppercase focus:ring-2 focus:ring-sky-500/20"
+                  className={cn(
+                    "h-9 text-sm font-mono uppercase focus:ring-2",
+                    showValidationErrors && !formState.invoiceNumber.trim()
+                      ? "border-red-500 focus:border-red-500 focus:ring-red-500/20"
+                      : "border-slate-350 dark:border-slate-800 dark:bg-slate-950 focus:ring-sky-500/20"
+                  )}
                 />
+                {showValidationErrors && !formState.invoiceNumber.trim() && (
+                  <p className="text-[10px] text-red-500 font-bold mt-1 animate-fade-in flex items-center gap-1">
+                    <AlertCircle className="w-3 h-3 shrink-0" />
+                    <span>Invoice number is required.</span>
+                  </p>
+                )}
               </div>
 
               {/* Issue Date */}
@@ -489,8 +553,19 @@ export default function EditInvoiceClient({ initialInvoice }: { initialInvoice: 
                     const d = new Date(e.target.value || Date.now());
                     actions.updateField('dueDate', d);
                   }}
-                  className="w-full h-9 text-sm px-3 border border-slate-355 dark:border-slate-800 dark:bg-slate-950 rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-500/20 font-mono"
+                  className={cn(
+                    "w-full h-9 text-sm px-3 border rounded-lg focus:outline-none focus:ring-2 font-mono",
+                    showValidationErrors && formState.dueDate < formState.issueDate
+                      ? "border-red-500 focus:border-red-500 focus:ring-red-500/20"
+                      : "border-slate-355 dark:border-slate-800 dark:bg-slate-950 focus:ring-sky-500/20"
+                  )}
                 />
+                {showValidationErrors && formState.dueDate < formState.issueDate && (
+                  <p className="text-[10px] text-red-500 font-bold mt-1 animate-fade-in flex items-center gap-1">
+                    <AlertCircle className="w-3 h-3 shrink-0" />
+                    <span>Cannot be before issue date.</span>
+                  </p>
+                )}
               </div>
 
               {/* Place of Supply */}
@@ -573,7 +648,7 @@ export default function EditInvoiceClient({ initialInvoice }: { initialInvoice: 
                         {/* Description */}
                         <div className="col-span-12 md:col-auto space-y-1 relative" ref={idx === activeItemSearchIndex ? autocompleteRef : null}>
                           <label className="block text-[8px] font-black text-slate-400 uppercase tracking-widest">
-                            Item Description
+                            Item Description <span className="text-red-500">*</span>
                           </label>
                           <Input
                             type="text"
@@ -584,8 +659,19 @@ export default function EditInvoiceClient({ initialInvoice }: { initialInvoice: 
                               setActiveItemSearchIndex(idx);
                               triggerAutocompleteSearch(idx, e.target.value);
                             }}
-                            className="h-8 text-xs border-slate-300 dark:border-slate-855 dark:bg-slate-950 font-medium"
+                            className={cn(
+                              "h-8 text-xs font-medium focus:ring-2",
+                              showValidationErrors && !item.description.trim()
+                                ? "border-red-500 focus:border-red-500 focus:ring-red-500/20"
+                                : "border-slate-300 dark:border-slate-855 dark:bg-slate-950 focus:ring-sky-500/20"
+                            )}
                           />
+                          {showValidationErrors && !item.description.trim() && (
+                            <p className="text-[9px] text-red-500 font-bold mt-0.5 animate-fade-in flex items-center gap-0.5">
+                              <AlertCircle className="w-2.5 h-2.5 shrink-0" />
+                              <span>Description required</span>
+                            </p>
+                          )}
 
                           {idx === activeItemSearchIndex && autocompleteItems.length > 0 && (
                             <div className="absolute left-0 right-0 z-20 mt-1 max-h-36 overflow-y-auto bg-white dark:bg-slate-900 border border-slate-250 dark:border-slate-805 rounded-lg shadow-lg">
@@ -623,7 +709,7 @@ export default function EditInvoiceClient({ initialInvoice }: { initialInvoice: 
                         {/* Quantity */}
                         <div className="col-span-4 md:col-auto space-y-1">
                           <label className="block text-[8px] font-black text-slate-400 uppercase tracking-widest text-right">
-                            Qty
+                            Qty <span className="text-red-500">*</span>
                           </label>
                           <Input
                             type="number"
@@ -631,8 +717,19 @@ export default function EditInvoiceClient({ initialInvoice }: { initialInvoice: 
                             min="0.01"
                             step="any"
                             onChange={(e) => actions.updateLineItem(idx, { quantity: parseFloat(e.target.value) || 0 })}
-                            className="h-8 text-xs border-slate-300 dark:border-slate-855 dark:bg-slate-950 font-mono text-right"
+                            className={cn(
+                              "h-8 text-xs font-mono text-right focus:ring-2",
+                              showValidationErrors && (!item.quantity || Number(item.quantity) <= 0)
+                                ? "border-red-500 focus:border-red-500 focus:ring-red-500/20"
+                                : "border-slate-300 dark:border-slate-855 dark:bg-slate-950 focus:ring-sky-500/20"
+                            )}
                           />
+                          {showValidationErrors && (!item.quantity || Number(item.quantity) <= 0) && (
+                            <p className="text-[9px] text-red-500 font-bold mt-0.5 animate-fade-in flex items-center gap-0.5 justify-end">
+                              <AlertCircle className="w-2.5 h-2.5 shrink-0" />
+                              <span>Qty &gt; 0</span>
+                            </p>
+                          )}
                         </div>
 
                         {/* Unit */}
@@ -664,7 +761,7 @@ export default function EditInvoiceClient({ initialInvoice }: { initialInvoice: 
                         {/* Rate */}
                         <div className="col-span-4 md:col-auto space-y-1">
                           <label className="block text-[8px] font-black text-slate-400 uppercase tracking-widest text-right">
-                            Rate
+                            Rate <span className="text-red-500">*</span>
                           </label>
                           <Input
                             type="number"
@@ -672,8 +769,19 @@ export default function EditInvoiceClient({ initialInvoice }: { initialInvoice: 
                             min="0"
                             step="any"
                             onChange={(e) => actions.updateLineItem(idx, { rate: parseFloat(e.target.value) || 0 })}
-                            className="h-8 text-xs border-slate-300 dark:border-slate-855 dark:bg-slate-950 font-mono text-right font-bold"
+                            className={cn(
+                              "h-8 text-xs font-mono text-right font-bold focus:ring-2",
+                              showValidationErrors && (item.rate === undefined || item.rate === null || Number(item.rate) < 0)
+                                ? "border-red-500 focus:border-red-500 focus:ring-red-500/20"
+                                : "border-slate-300 dark:border-slate-855 dark:bg-slate-950 focus:ring-sky-500/20"
+                            )}
                           />
+                          {showValidationErrors && (item.rate === undefined || item.rate === null || Number(item.rate) < 0) && (
+                            <p className="text-[9px] text-red-500 font-bold mt-0.5 animate-fade-in flex items-center gap-0.5 justify-end">
+                              <AlertCircle className="w-2.5 h-2.5 shrink-0" />
+                              <span>Rate &ge; 0</span>
+                            </p>
+                          )}
                         </div>
 
                         {/* Discount */}
@@ -997,7 +1105,7 @@ export default function EditInvoiceClient({ initialInvoice }: { initialInvoice: 
               <Button
                 type="button"
                 variant="outline"
-                disabled={isSubmitting || !isValid}
+                disabled={isSubmitting}
                 onClick={() => handleSaveInvoice('DRAFT')}
                 className="h-10 text-xs font-bold border-slate-200 text-slate-700 hover:bg-slate-50 dark:border-slate-800 dark:text-slate-300 dark:hover:bg-slate-850 cursor-pointer flex items-center gap-1.5 shadow-sm"
               >
@@ -1007,7 +1115,7 @@ export default function EditInvoiceClient({ initialInvoice }: { initialInvoice: 
 
               <Button
                 type="button"
-                disabled={isSubmitting || !isValid}
+                disabled={isSubmitting}
                 onClick={() => handleSaveInvoice(initialInvoice.status === 'DRAFT' ? 'DRAFT' : 'SENT')}
                 className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold h-10 px-5 gap-1.5 shadow-sm rounded-lg cursor-pointer text-xs flex items-center"
               >

@@ -7,7 +7,7 @@ import NumberFlow from '@number-flow/react';
 
 interface StatCardProps {
   title: string;
-  value: number;
+  value: number | string;
   change?: number;
   trend?: 'up' | 'down';
   icon: ReactNode;
@@ -41,11 +41,15 @@ export default function StatCard({
 
       <div className="mt-4 flex flex-col gap-2">
         <div className="text-2xl font-bold text-slate-900 dark:text-slate-50 tracking-tight">
-          <NumberFlow
-            value={value}
-            format={formatOptions}
-            locales="en-IN"
-          />
+          {typeof value === 'number' ? (
+            <NumberFlow
+              value={value}
+              format={formatOptions}
+              locales="en-IN"
+            />
+          ) : (
+            value
+          )}
         </div>
 
         {change !== undefined && trend && (

@@ -54,7 +54,7 @@ export default function DashboardCharts({
         </div>
 
         <div className="h-72 w-full">
-          <ResponsiveContainer width="100%" height="100%">
+          <ResponsiveContainer width="100%" height="100%" minWidth={0}>
             <AreaChart
               data={revenueData}
               margin={{ top: 10, right: 10, left: -20, bottom: 0 }}
@@ -125,7 +125,7 @@ export default function DashboardCharts({
           </div>
 
           <div className="h-52 w-full">
-            <ResponsiveContainer width="100%" height="100%">
+            <ResponsiveContainer width="100%" height="100%" minWidth={0}>
               <PieChart>
                 <Pie
                   data={activeStatusData.length > 0 ? activeStatusData : [{ name: 'No Data', value: 1, color: '#e2e8f0' }]}

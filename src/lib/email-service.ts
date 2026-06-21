@@ -21,14 +21,14 @@ export async function sendInvoiceEmail(
   const systemFromEmail = process.env.SMTP_FROM_EMAIL || 'onboarding@resend.dev';
   const systemFromName = process.env.SMTP_FROM_NAME || 'Virbic Invoicing';
 
-  let fromEmail = systemFromEmail;
+  const fromEmail = systemFromEmail;
   let fromName = systemFromName;
   let replyToEmail = systemFromEmail;
   let businessName = '';
   let businessEmail = '';
   let businessPhone = '';
 
-  let attachments: Array<{ filename: string; content: Buffer }> = [];
+  const attachments: Array<{ filename: string; content: Buffer }> = [];
 
   // 1. Fetch complete invoice and generate PDF
   try {

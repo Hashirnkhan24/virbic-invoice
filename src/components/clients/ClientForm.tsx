@@ -6,6 +6,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import { useDropzone } from 'react-dropzone';
 import Papa from 'papaparse';
+import * as XLSX from 'xlsx';
 import {
   AlertCircle,
   Check,
@@ -61,6 +62,46 @@ const clientFormSchema = z.object({
 
 type ClientFormValues = z.infer<typeof clientFormSchema>;
 
+const CLIENT_TARGET_FIELDS = [
+  { key: 'name', label: 'Client Name', required: true, description: 'Legal or display name of the client' },
+  { key: 'gstin', label: 'GSTIN', required: false, description: '15-digit GST identification number' },
+  { key: 'email', label: 'Email Address', required: false, description: 'Primary contact email' },
+  { key: 'phone', label: 'Phone Number', required: false, description: '10-digit mobile or telephone number' },
+  { key: 'billingAddress', label: 'Billing Address', required: false, description: 'Street address' },
+  { key: 'billingCity', label: 'City', required: false, description: 'City name' },
+  { key: 'billingState', label: 'State', required: false, description: 'Indian State name or code' },
+  { key: 'billingPincode', label: 'Pincode', required: false, description: '6-digit postal code' },
+  { key: 'notes', label: 'Notes', required: false, description: 'Additional customer details or remarks' },
+];
+
+const autoMapClientHeaders = (headers: string[]): Record<string, string> => {
+  const initialMappings: Record<string, string> = {};
+  
+  const aliasMap: Record<string, string[]> = {
+    name: ['name', 'client name', 'company', 'company name', 'customer', 'customer name', 'organization', 'display name'],
+    gstin: ['gstin', 'gst number', 'gst no', 'gst', 'tax registration', 'tax id', 'gst_in', 'gstin/uin'],
+    email: ['email', 'email address', 'email id', 'emailaddress', 'email_id', 'mail'],
+    phone: ['phone', 'phone number', 'phone_number', 'mobile', 'mobile number', 'contact', 'telephone'],
+    billingAddress: ['billingaddress', 'billing address', 'address', 'street address', 'street', 'billing_address', 'address line 1', 'addressline1'],
+    billingCity: ['billingcity', 'billing city', 'city', 'town', 'billing_city'],
+    billingState: ['billingstate', 'billing state', 'state', 'province', 'billing_state'],
+    billingPincode: ['billingpincode', 'billing pincode', 'pincode', 'pin code', 'postal code', 'zip', 'zip code', 'billing_pincode'],
+    notes: ['notes', 'note', 'remarks', 'description', 'comment'],
+  };
+
+  headers.forEach((header) => {
+    const cleanHeader = header.toLowerCase().trim();
+    for (const [key, aliases] of Object.entries(aliasMap)) {
+      if (aliases.includes(cleanHeader)) {
+        initialMappings[key] = header;
+        break;
+      }
+    }
+  });
+
+  return initialMappings;
+};
+
 interface ClientFormProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -88,10 +129,17 @@ export default function ClientForm({
   const [showShippingDropdown, setShowShippingDropdown] = useState(false);
   const shippingDropdownRef = useRef<HTMLDivElement>(null);
 
-  // CSV Import States
+  // CSV / Excel Import States
   const [csvData, setCsvData] = useState<any[]>([]);
   const [csvErrors, setCsvErrors] = useState<string[]>([]);
   const [validRowsCount, setValidRowsCount] = useState(0);
+  const [importStep, setImportStep] = useState<'upload' | 'map' | 'validate'>('upload');
+  const [rawHeaders, setRawHeaders] = useState<string[]>([]);
+  const [rawRows, setRawRows] = useState<any[]>([]);
+  const [excelWorkbook, setExcelWorkbook] = useState<any>(null);
+  const [sheetsList, setSheetsList] = useState<string[]>([]);
+  const [selectedSheet, setSelectedSheet] = useState<string>('');
+  const [mappings, setMappings] = useState<Record<string, string>>({});
 
   const isEditMode = !!initialData;
 
@@ -134,6 +182,13 @@ export default function ClientForm({
       setCsvData([]);
       setCsvErrors([]);
       setValidRowsCount(0);
+      setImportStep('upload');
+      setRawHeaders([]);
+      setRawRows([]);
+      setExcelWorkbook(null);
+      setSheetsList([]);
+      setSelectedSheet('');
+      setMappings({});
       
       if (initialData) {
         reset({
@@ -283,67 +338,187 @@ export default function ClientForm({
     document.body.removeChild(link);
   };
 
-  // Drag and Drop CSV file
-  const onDropCsv = (acceptedFiles: File[]) => {
+  // Drag and Drop CSV / Excel file
+  const onDropCsv = async (acceptedFiles: File[]) => {
     if (acceptedFiles.length > 0) {
       const file = acceptedFiles[0];
-      
-      Papa.parse(file, {
-        header: true,
-        skipEmptyLines: true,
-        complete: (results) => {
-          const rows = results.data as any[];
-          const errorsList: string[] = [];
-          const validRows: any[] = [];
+      const isExcel = file.name.endsWith('.xlsx') || file.name.endsWith('.xls');
 
-          rows.forEach((row, idx) => {
-            const rowNumber = idx + 1;
-            const mappedRow = {
-              name: row.Name || row['Client Name'] || '',
-              gstin: row.GSTIN || row['GST Number'] || '',
-              email: row.Email || row['Email Address'] || '',
-              phone: row.Phone || row['Phone Number'] || '',
-              billingAddress: row.BillingAddress || row.Address || '',
-              billingCity: row.BillingCity || row.City || '',
-              billingState: row.BillingState || row.State || '',
-              billingPincode: row.BillingPincode || row.Pincode || '',
-              notes: row.Notes || '',
-            };
-
-            // Run light validations on row
-            if (!mappedRow.name) {
-              errorsList.push(`Row ${rowNumber}: Name is required`);
-              return;
-            }
-
-            if (mappedRow.gstin) {
-              const matches = /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/i.test(
-                mappedRow.gstin
-              );
-              if (!matches) {
-                errorsList.push(`Row ${rowNumber}: Invalid GSTIN format (${mappedRow.gstin})`);
-                return;
-              }
-            }
-
-            if (mappedRow.email) {
-              const emailMatches = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(mappedRow.email);
-              if (!emailMatches) {
-                errorsList.push(`Row ${rowNumber}: Invalid Email format (${mappedRow.email})`);
-                return;
-              }
-            }
-
-            // Valid row
-            validRows.push(mappedRow);
+      try {
+        if (isExcel) {
+          const buffer = await file.arrayBuffer();
+          const workbook = XLSX.read(buffer, { type: 'array' });
+          const sheets = workbook.SheetNames;
+          
+          setExcelWorkbook(workbook);
+          setSheetsList(sheets);
+          
+          const defaultSheet = sheets[0];
+          setSelectedSheet(defaultSheet);
+          
+          const worksheet = workbook.Sheets[defaultSheet];
+          const json = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: '' }) as any[][];
+          
+          if (json.length === 0) {
+            toast.error('The uploaded sheet is empty.');
+            return;
+          }
+          
+          // Row 0 is the headers
+          const headers = json[0].map((h) => String(h).trim()).filter((h) => h !== '');
+          const rows = json.slice(1).map((rowArray) => {
+            const rowObj: any = {};
+            headers.forEach((header, index) => {
+              rowObj[header] = rowArray[index] !== undefined ? rowArray[index] : '';
+            });
+            return rowObj;
           });
+          
+          setRawHeaders(headers);
+          setRawRows(rows);
+          setMappings(autoMapClientHeaders(headers));
+          setImportStep('map');
+          
+        } else {
+          // CSV Parsing
+          Papa.parse(file, {
+            header: true,
+            skipEmptyLines: true,
+            complete: (results) => {
+              const rows = results.data as any[];
+              const headers = (results.meta.fields || []).map((h) => h.trim());
+              
+              if (rows.length === 0) {
+                toast.error('The uploaded CSV file is empty.');
+                return;
+              }
+              
+              setRawHeaders(headers);
+              setRawRows(rows);
+              setMappings(autoMapClientHeaders(headers));
+              setImportStep('map');
+            },
+            error: (err) => {
+              toast.error(`Error parsing CSV: ${err.message}`);
+            }
+          });
+        }
+      } catch (err: any) {
+        console.error(err);
+        toast.error(`Failed to read spreadsheet file: ${err.message || err}`);
+      }
+    }
+  };
 
-          setCsvData(validRows);
-          setCsvErrors(errorsList);
-          setValidRowsCount(validRows.length);
-          toast.info(`CSV Parsed: found ${validRows.length} valid rows and ${errorsList.length} errors.`);
-        },
+  const handleSheetChange = async (sheetName: string) => {
+    if (!excelWorkbook) return;
+    try {
+      setSelectedSheet(sheetName);
+      const worksheet = excelWorkbook.Sheets[sheetName];
+      const json = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: '' }) as any[][];
+      
+      if (json.length === 0) {
+        setRawHeaders([]);
+        setRawRows([]);
+        setMappings({});
+        toast.warning('Selected sheet is empty.');
+        return;
+      }
+      
+      const headers = json[0].map((h) => String(h).trim()).filter((h) => h !== '');
+      const rows = json.slice(1).map((rowArray) => {
+        const rowObj: any = {};
+        headers.forEach((header, index) => {
+          rowObj[header] = rowArray[index] !== undefined ? rowArray[index] : '';
+        });
+        return rowObj;
       });
+      
+      setRawHeaders(headers);
+      setRawRows(rows);
+      setMappings(autoMapClientHeaders(headers));
+    } catch (err: any) {
+      toast.error(`Error loading sheet: ${err.message}`);
+    }
+  };
+
+  const handleValidateMappings = () => {
+    // Check if required fields are mapped
+    const missingRequired = CLIENT_TARGET_FIELDS.filter((f) => f.required && !mappings[f.key]);
+    if (missingRequired.length > 0) {
+      toast.error(`Please map required fields: ${missingRequired.map((f) => f.label).join(', ')}`);
+      return;
+    }
+
+    const errorsList: string[] = [];
+    const validRows: any[] = [];
+
+    rawRows.forEach((row, idx) => {
+      const rowNumber = idx + 2; // header is row 1, so data starts at row 2
+      
+      // Extract values based on mapping
+      const name = mappings.name ? String(row[mappings.name] || '').trim() : '';
+      const gstin = mappings.gstin ? String(row[mappings.gstin] || '').trim() : '';
+      const email = mappings.email ? String(row[mappings.email] || '').trim() : '';
+      const phone = mappings.phone ? String(row[mappings.phone] || '').trim() : '';
+      const billingAddress = mappings.billingAddress ? String(row[mappings.billingAddress] || '').trim() : '';
+      const billingCity = mappings.billingCity ? String(row[mappings.billingCity] || '').trim() : '';
+      const billingState = mappings.billingState ? String(row[mappings.billingState] || '').trim() : '';
+      const billingPincode = mappings.billingPincode ? String(row[mappings.billingPincode] || '').trim() : '';
+      const notes = mappings.notes ? String(row[mappings.notes] || '').trim() : '';
+
+      // Skip entirely empty rows (edge case)
+      const isRowEmpty = !name && !gstin && !email && !phone && !billingAddress && !billingCity && !billingState && !billingPincode && !notes;
+      if (isRowEmpty) return;
+
+      const mappedRow = {
+        name,
+        gstin,
+        email,
+        phone,
+        billingAddress,
+        billingCity,
+        billingState,
+        billingPincode,
+        notes,
+      };
+
+      // Validations
+      if (!mappedRow.name) {
+        errorsList.push(`Row ${rowNumber}: Name is empty or missing`);
+        return;
+      }
+
+      if (mappedRow.gstin) {
+        const matches = /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/i.test(
+          mappedRow.gstin
+        );
+        if (!matches) {
+          errorsList.push(`Row ${rowNumber}: Invalid GSTIN format ("${mappedRow.gstin}")`);
+          return;
+        }
+      }
+
+      if (mappedRow.email) {
+        const emailMatches = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(mappedRow.email);
+        if (!emailMatches) {
+          errorsList.push(`Row ${rowNumber}: Invalid Email format ("${mappedRow.email}")`);
+          return;
+        }
+      }
+
+      validRows.push(mappedRow);
+    });
+
+    setCsvData(validRows);
+    setCsvErrors(errorsList);
+    setValidRowsCount(validRows.length);
+    setImportStep('validate');
+    
+    if (errorsList.length > 0) {
+      toast.warning(`Mapped ${validRows.length} valid rows, but found ${errorsList.length} schema conflicts.`);
+    } else {
+      toast.success(`Success! All ${validRows.length} rows mapped and validated successfully.`);
     }
   };
 
@@ -353,7 +528,11 @@ export default function ClientForm({
     isDragActive: isCsvDragActive,
   } = useDropzone({
     onDrop: onDropCsv,
-    accept: { 'text/csv': ['.csv'] },
+    accept: {
+      'text/csv': ['.csv'],
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': ['.xlsx'],
+      'application/vnd.ms-excel': ['.xls'],
+    },
     multiple: false,
   });
 
@@ -738,109 +917,260 @@ export default function ClientForm({
           </TabsContent>
 
           {/* TAB 3: CSV IMPORT */}
+          {/* TAB 3: CSV / EXCEL BULK IMPORT */}
           {!isEditMode && (
             <TabsContent value="csv" className="space-y-6">
-              <div className="space-y-4">
-                <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4 bg-slate-50 dark:bg-slate-950/40 p-4 rounded-xl border border-slate-200/50 dark:border-slate-850">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-lg bg-emerald-100 dark:bg-emerald-950/40 text-emerald-650 flex items-center justify-center">
-                      <FileSpreadsheet className="w-5 h-5" />
+              {importStep === 'upload' && (
+                <div className="space-y-4">
+                  <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4 bg-slate-50 dark:bg-slate-950/40 p-4 rounded-xl border border-slate-200/50 dark:border-slate-850">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-lg bg-emerald-100 dark:bg-emerald-950/40 text-emerald-650 flex items-center justify-center">
+                        <FileSpreadsheet className="w-5 h-5 animate-pulse" />
+                      </div>
+                      <div>
+                        <h4 className="text-sm font-bold text-slate-850 dark:text-slate-200">Spreadsheet Bulk Import</h4>
+                        <p className="text-[11px] text-slate-500">Upload multiple client rows from CSV or Excel sheets.</p>
+                      </div>
                     </div>
-                    <div>
-                      <h4 className="text-sm font-bold text-slate-850 dark:text-slate-200">CSV Bulk Import</h4>
-                      <p className="text-[11px] text-slate-500">Upload multiple client rows at once.</p>
-                    </div>
+                    
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={downloadCsvTemplate}
+                      className="flex items-center justify-center gap-1.5 h-9 text-xs border-slate-200 text-slate-700 dark:border-slate-800 dark:text-slate-300 hover:bg-slate-50 font-bold cursor-pointer"
+                    >
+                      <Download className="w-4 h-4" />
+                      <span>Download Template</span>
+                    </Button>
                   </div>
-                  
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={downloadCsvTemplate}
-                    className="flex items-center justify-center gap-1.5 h-9 text-xs border-slate-200 text-slate-700 dark:border-slate-800 dark:text-slate-300 hover:bg-slate-50 font-bold cursor-pointer"
+
+                  {/* Dropzone */}
+                  <div
+                    {...getCsvRootProps()}
+                    className={cn(
+                      "border-2 border-dashed rounded-xl p-10 flex flex-col items-center justify-center cursor-pointer transition-all hover:bg-slate-50 dark:hover:bg-slate-800/40 min-h-[200px]",
+                      isCsvDragActive ? "border-emerald-500 bg-emerald-50/20" : "border-slate-300 dark:border-slate-800"
+                    )}
                   >
-                    <Download className="w-4 h-4" />
-                    <span>Template</span>
-                  </Button>
+                    <input {...getCsvInputProps()} />
+                    <UploadCloud className="w-12 h-12 text-slate-400 mb-3" />
+                    <p className="text-sm font-semibold text-slate-700 dark:text-slate-350 text-center">
+                      {isCsvDragActive ? 'Drop your spreadsheet here' : 'Drag & drop your CSV or Excel client list'}
+                    </p>
+                    <p className="text-xs text-slate-450 mt-1 text-center">Formats: .csv, .xlsx, .xls files only</p>
+                  </div>
                 </div>
+              )}
 
-                {/* CSV File Dropzone */}
-                <div
-                  {...getCsvRootProps()}
-                  className={cn(
-                    "border-2 border-dashed rounded-xl p-8 flex flex-col items-center justify-center cursor-pointer transition-all hover:bg-slate-50 dark:hover:bg-slate-800/40",
-                    isCsvDragActive ? "border-emerald-500 bg-emerald-50/20" : "border-slate-300 dark:border-slate-800"
-                  )}
-                >
-                  <input {...getCsvInputProps()} />
-                  <UploadCloud className="w-10 h-10 text-slate-400 mb-2" />
-                  <p className="text-sm font-semibold text-slate-700 dark:text-slate-350">
-                    {isCsvDragActive ? 'Drop your CSV here' : 'Drag & drop your CSV client list'}
-                  </p>
-                  <p className="text-xs text-slate-500 mt-1">Or click to browse files</p>
-                </div>
-
-                {/* CSV Validation feedback */}
-                {csvErrors.length > 0 && (
-                  <div className="bg-red-50 dark:bg-red-950/20 border border-red-100 dark:border-red-900/30 p-4 rounded-xl space-y-2">
-                    <span className="text-xs font-bold text-red-700 dark:text-red-400 flex items-center gap-1.5">
-                      <AlertTriangle className="w-4.5 h-4.5" />
-                      Parsing Warnings ({csvErrors.length})
+              {importStep === 'map' && (
+                <div className="space-y-4">
+                  <div className="bg-emerald-50/50 dark:bg-emerald-950/10 border border-emerald-100 dark:border-emerald-900/30 p-3 rounded-lg flex items-center justify-between gap-3">
+                    <span className="text-xs font-semibold text-emerald-800 dark:text-emerald-455">
+                      File Loaded. Map spreadsheet headers to client attributes.
                     </span>
-                    <ul className="text-xs text-red-650 dark:text-red-400 space-y-1 max-h-32 overflow-y-auto list-disc pl-4">
-                      {csvErrors.map((err, i) => (
-                        <li key={i}>{err}</li>
-                      ))}
-                    </ul>
-                    <p className="text-[10px] text-slate-450 italic">Rows with warnings will be skipped during import.</p>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setImportStep('upload')}
+                      className="h-7 text-[10px] text-slate-550 font-bold cursor-pointer hover:bg-emerald-100/50 dark:hover:bg-emerald-900/20"
+                    >
+                      Upload Different File
+                    </Button>
                   </div>
-                )}
 
-                {/* CSV Preview Table */}
-                {csvData.length > 0 && (
-                  <div className="space-y-3">
-                    <div className="flex justify-between items-center">
-                      <span className="text-xs font-bold text-slate-500 flex items-center gap-1">
-                        <Info className="w-4 h-4 text-emerald-500" />
-                        Previewing valid rows ({validRowsCount} ready)
-                      </span>
+                  {/* Excel Sheet selector if multiple */}
+                  {sheetsList.length > 1 && (
+                    <div className="flex items-center gap-2 bg-slate-50 dark:bg-slate-950/40 p-3 rounded-lg border border-slate-200/50 dark:border-slate-800/80 text-xs">
+                      <span className="font-bold text-slate-700 dark:text-slate-300">Selected Sheet:</span>
+                      <select
+                        value={selectedSheet}
+                        onChange={(e) => handleSheetChange(e.target.value)}
+                        className="h-8 px-2 rounded-md border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 font-semibold text-slate-800 dark:text-slate-100 cursor-pointer"
+                      >
+                        {sheetsList.map((s) => (
+                          <option key={s} value={s}>{s}</option>
+                        ))}
+                      </select>
                     </div>
+                  )}
 
-                    <div className="border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden shadow-sm">
-                      <table className="w-full text-xs text-left border-collapse bg-white dark:bg-slate-900">
-                        <thead>
-                          <tr className="bg-slate-50 dark:bg-slate-950 border-b border-slate-200 dark:border-slate-800 text-slate-400 font-bold uppercase tracking-wider">
-                            <th className="px-4 py-2">Name</th>
-                            <th className="px-4 py-2">GSTIN</th>
-                            <th className="px-4 py-2">Email</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {csvData.slice(0, 5).map((row, i) => (
-                            <tr key={i} className="border-b border-slate-100 dark:border-slate-850 text-slate-800 dark:text-slate-250">
-                              <td className="px-4 py-2 font-bold">{row.name}</td>
-                              <td className="px-4 py-2 font-mono text-[10px]">{row.gstin || 'N/A'}</td>
-                              <td className="px-4 py-2">{row.email || 'N/A'}</td>
+                  {/* Mapping Fields Grid */}
+                  <div className="border border-slate-250/60 dark:border-slate-800 rounded-xl overflow-hidden shadow-xs">
+                    <table className="w-full text-xs text-left border-collapse bg-white dark:bg-slate-900">
+                      <thead>
+                        <tr className="bg-slate-50 dark:bg-slate-950 border-b border-slate-200 dark:border-slate-800 text-slate-455 font-bold uppercase tracking-wider">
+                          <th className="px-4 py-2.5">Virbic Client Attribute</th>
+                          <th className="px-4 py-2.5">Your Column Header</th>
+                          <th className="px-4 py-2.5">Sample Value (Row 1)</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100 dark:divide-slate-850">
+                        {CLIENT_TARGET_FIELDS.map((field) => {
+                          const mappedCol = mappings[field.key];
+                          const previewVal = mappedCol ? String(rawRows[0]?.[mappedCol] || '') : '';
+                          
+                          return (
+                            <tr key={field.key} className="hover:bg-slate-50/40 dark:hover:bg-slate-850/10">
+                              <td className="px-4 py-3 font-semibold text-slate-700 dark:text-slate-300">
+                                <span>{field.label}</span>
+                                {field.required && <span className="text-red-500 ml-1 font-bold">*</span>}
+                                <span className="block text-[10px] text-slate-400 font-medium">{field.description}</span>
+                              </td>
+                              <td className="px-4 py-3">
+                                <select
+                                  value={mappedCol || ''}
+                                  onChange={(e) => {
+                                    const val = e.target.value;
+                                    setMappings((prev) => {
+                                      const next = { ...prev };
+                                      if (val) next[field.key] = val;
+                                      else delete next[field.key];
+                                      return next;
+                                    });
+                                  }}
+                                  className={cn(
+                                    "w-full h-8 px-2 rounded-md border text-xs bg-white dark:bg-slate-900 cursor-pointer font-semibold",
+                                    field.required && !mappedCol 
+                                      ? "border-red-300 dark:border-red-900 text-red-500" 
+                                      : "border-slate-200 dark:border-slate-800 text-slate-800 dark:text-slate-100"
+                                  )}
+                                >
+                                  <option value="">-- Unmapped --</option>
+                                  {rawHeaders.map((header) => (
+                                    <option key={header} value={header}>{header}</option>
+                                  ))}
+                                </select>
+                              </td>
+                              <td className="px-4 py-3 text-slate-500 font-medium truncate max-w-[150px]">
+                                {mappedCol ? (
+                                  previewVal ? (
+                                    <code className="text-[10px] bg-slate-50 dark:bg-slate-950 px-1 py-0.5 rounded border border-slate-100 dark:border-slate-855 font-mono text-slate-650 dark:text-slate-400">{previewVal}</code>
+                                  ) : (
+                                    <span className="italic text-slate-355">empty</span>
+                                  )
+                                ) : (
+                                  <span className="text-slate-300">—</span>
+                                )}
+                              </td>
                             </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
+                          );
+                        })}
+                      </tbody>
+                    </table>
                   </div>
-                )}
-              </div>
 
-              {/* Action Buttons */}
-              <div className="pt-6 flex justify-between items-center border-t border-slate-100 dark:border-slate-800">
-                <span />
-                <Button
-                  type="button"
-                  onClick={handleBulkImport}
-                  disabled={isLoading || csvData.length === 0}
-                  className="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold px-6 cursor-pointer"
-                >
-                  {isLoading ? 'Importing...' : `Import ${validRowsCount} Clients`}
-                </Button>
-              </div>
+                  {/* Actions */}
+                  <div className="pt-4 flex justify-between items-center border-t border-slate-100 dark:border-slate-800">
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      onClick={() => setImportStep('upload')}
+                      className="text-slate-500 hover:text-slate-800 dark:text-slate-450 dark:hover:text-slate-250 cursor-pointer font-bold"
+                    >
+                      Cancel
+                    </Button>
+                    <Button
+                      type="button"
+                      onClick={handleValidateMappings}
+                      className="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold px-6 cursor-pointer"
+                    >
+                      Validate & Preview Mapped Data
+                    </Button>
+                  </div>
+                </div>
+              )}
+
+              {importStep === 'validate' && (
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-2">
+                    <span className="text-xs font-bold text-slate-500 flex items-center gap-1.5">
+                      <Info className="w-4.5 h-4.5 text-emerald-500 animate-bounce" />
+                      Validation Results: {validRowsCount} ready to import.
+                    </span>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setImportStep('map')}
+                      className="h-7 text-[10px] text-slate-550 font-bold cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-850"
+                    >
+                      Adjust Column Mappings
+                    </Button>
+                  </div>
+
+                  {/* Schema warnings log */}
+                  {csvErrors.length > 0 && (
+                    <div className="bg-amber-50 dark:bg-amber-955/20 border border-amber-100 dark:border-amber-900/30 p-4 rounded-xl space-y-2">
+                      <span className="text-xs font-bold text-amber-800 dark:text-amber-450 flex items-center gap-1.5">
+                        <AlertTriangle className="w-4.5 h-4.5 text-amber-500" />
+                        Schema Conflicts / Warnings ({csvErrors.length} rows skipped)
+                      </span>
+                      <ul className="text-xs text-amber-750 dark:text-amber-400 space-y-1 max-h-32 overflow-y-auto list-disc pl-4 font-medium">
+                        {csvErrors.map((err, i) => (
+                          <li key={i}>{err}</li>
+                        ))}
+                      </ul>
+                      <p className="text-[10px] text-slate-455 italic">These rows contain invalid data and will be skipped during import.</p>
+                    </div>
+                  )}
+
+                  {csvErrors.length === 0 && (
+                    <div className="bg-emerald-50/50 dark:bg-emerald-950/10 border border-emerald-100 dark:border-emerald-900/30 p-3 rounded-lg text-xs font-semibold text-emerald-800 dark:text-emerald-450 flex items-center gap-2">
+                      <Check className="w-4 h-4 text-emerald-500 stroke-[3]" />
+                      Success! Clean import. All rows matched and passed validations.
+                    </div>
+                  )}
+
+                  {/* Data Preview Table */}
+                  {csvData.length > 0 && (
+                    <div className="space-y-2">
+                      <h5 className="text-[10px] font-black uppercase tracking-wider text-slate-400">Previewing first 5 rows</h5>
+                      <div className="border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden shadow-xs">
+                        <table className="w-full text-xs text-left border-collapse bg-white dark:bg-slate-900">
+                          <thead>
+                            <tr className="bg-slate-50 dark:bg-slate-950 border-b border-slate-200 dark:border-slate-800 text-slate-455 font-bold uppercase">
+                              <th className="px-4 py-2">Client Name</th>
+                              <th className="px-4 py-2">GSTIN</th>
+                              <th className="px-4 py-2">Email</th>
+                              <th className="px-4 py-2">Phone</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {csvData.slice(0, 5).map((row, i) => (
+                              <tr key={i} className="border-b border-slate-100 dark:border-slate-850 text-slate-800 dark:text-slate-200 font-medium">
+                                <td className="px-4 py-2 font-bold text-slate-850 dark:text-slate-100">{row.name}</td>
+                                <td className="px-4 py-2 font-mono text-[10px]">{row.gstin || <span className="text-slate-300">—</span>}</td>
+                                <td className="px-4 py-2">{row.email || <span className="text-slate-300">—</span>}</td>
+                                <td className="px-4 py-2">{row.phone || <span className="text-slate-300">—</span>}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Action Buttons */}
+                  <div className="pt-4 flex justify-between items-center border-t border-slate-100 dark:border-slate-800">
+                    <Button
+                      type="button"
+                      onClick={() => setImportStep('map')}
+                      className="h-9 px-4 text-xs font-semibold border border-slate-200 hover:bg-slate-50 text-slate-700 dark:border-slate-800 dark:text-slate-300 dark:hover:bg-slate-850 rounded-lg cursor-pointer"
+                    >
+                      Back to Mapping
+                    </Button>
+                    <Button
+                      type="button"
+                      onClick={handleBulkImport}
+                      disabled={isLoading || csvData.length === 0}
+                      className="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold px-6 cursor-pointer"
+                    >
+                      {isLoading ? 'Importing...' : `Confirm Import: Save ${validRowsCount} Clients`}
+                    </Button>
+                  </div>
+                </div>
+              )}
             </TabsContent>
           )}
         </Tabs>

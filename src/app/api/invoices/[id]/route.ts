@@ -7,18 +7,20 @@ import {
   calculateLineItemTotal,
   calculateInvoiceTotals,
 } from '@/lib/tax-engine';
+import { syncClientCounters } from '@/lib/db/invoice-hooks';
+import { logClientActivity } from '@/lib/db/client-analytics';
 
 // Zod schema for invoice line item validation
 const invoiceLineItemSchema = z.object({
   itemId: z.string().optional().nullable(),
   description: z.string().min(1, 'Item description is required'),
   hsnCode: z.string().optional().nullable(),
-  quantity: z.number().positive('Quantity must be greater than 0'),
+  quantity: z.coerce.number().positive('Quantity must be greater than 0'),
   unit: z.string().default('PCS'),
-  rate: z.number().min(0, 'Rate must be greater than or equal to 0'),
-  discount: z.number().default(0),
+  rate: z.coerce.number().min(0, 'Rate must be greater than or equal to 0'),
+  discount: z.coerce.number().default(0),
   discountType: z.enum(['PERCENTAGE', 'AMOUNT']).default('PERCENTAGE'),
-  gstRate: z.number().default(18),
+  gstRate: z.coerce.number().default(18),
 });
 
 // Zod schema for invoice validation
@@ -28,7 +30,7 @@ const invoiceSchema = z.object({
   invoiceNumber: z.string().min(1, 'Invoice number is required'),
   template: z.string().default('modern'),
   currency: z.string().default('INR'),
-  exchangeRate: z.number().default(1),
+  exchangeRate: z.coerce.number().default(1),
   issueDate: z.string().transform((val) => new Date(val)),
   dueDate: z.string().transform((val) => new Date(val)),
   placeOfSupply: z.string().min(1, 'Place of supply is required'),
@@ -37,9 +39,9 @@ const invoiceSchema = z.object({
   terms: z.string().optional().nullable(),
   customFields: z.array(z.object({ key: z.string(), value: z.string() })).optional().default([]),
   status: z.enum(['DRAFT', 'SENT', 'PAID', 'OVERDUE', 'CANCELLED', 'PARTIAL']).default('DRAFT'),
-  overallDiscount: z.number().default(0),
+  overallDiscount: z.coerce.number().default(0),
   overallDiscountType: z.enum(['PERCENTAGE', 'AMOUNT']).default('PERCENTAGE'),
-  cessRate: z.number().default(0),
+  cessRate: z.coerce.number().default(0),
   lineItems: z.array(invoiceLineItemSchema).min(1, 'At least one line item is required'),
 });
 
@@ -230,9 +232,25 @@ export async function PUT(
           });
         })
       );
-
       return invoice;
     });
+
+    // Sync client counters and log activity
+    try {
+      await syncClientCounters(updatedInvoice.clientId, user.id);
+      if (existingInvoice.clientId !== updatedInvoice.clientId) {
+        await syncClientCounters(existingInvoice.clientId, user.id);
+      }
+      await logClientActivity({
+        clientId: updatedInvoice.clientId,
+        userId: user.id,
+        action: 'INVOICE_UPDATED',
+        details: `Invoice ${updatedInvoice.invoiceNumber} updated`,
+        amount: Number(updatedInvoice.grandTotal),
+      });
+    } catch (syncErr) {
+      console.error('[INVOICE PUT API] Failed to sync client counters or log activity:', syncErr);
+    }
 
     return NextResponse.json({ invoice: updatedInvoice });
   } catch (error: any) {
@@ -278,6 +296,20 @@ export async function DELETE(
     await prisma.invoice.delete({
       where: { id },
     });
+
+    // Sync client counters and log activity
+    try {
+      await syncClientCounters(invoice.clientId, user.id);
+      await logClientActivity({
+        clientId: invoice.clientId,
+        userId: user.id,
+        action: 'INVOICE_DELETED',
+        details: `Invoice ${invoice.invoiceNumber} deleted`,
+        amount: Number(invoice.grandTotal),
+      });
+    } catch (syncErr) {
+      console.error('[INVOICE DELETE API] Failed to sync client counters or log activity:', syncErr);
+    }
 
     return NextResponse.json({ success: true, message: 'Invoice deleted successfully' });
   } catch (error: any) {

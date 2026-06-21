@@ -328,6 +328,7 @@ export default function OnboardingPage() {
       const created = await create(data);
       if (created) {
         setActiveBusinessId(created.id);
+        document.cookie = `active_business_id=${created.id}; path=/; max-age=31536000; SameSite=Lax`;
         // Notify other components (like TopBar Selector) that a new business profile was created
         window.dispatchEvent(new CustomEvent('business-changed'));
         setStep(3);

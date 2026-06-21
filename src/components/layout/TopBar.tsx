@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+
 import { Bell, Plus, Menu, LogOut, User as UserIcon } from 'lucide-react';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
@@ -22,40 +22,14 @@ interface TopBarProps {
 }
 
 export default function TopBar({ onToggleSidebar }: TopBarProps) {
-  const pathname = usePathname();
   const { signOut } = useClerk();
   const { user, isLoaded } = useUser();
-
-  // Create friendly breadcrumb labels
-  const getBreadcrumbs = () => {
-    const paths = pathname.split('/').filter((p) => p);
-    if (paths.length === 0) return [{ label: 'Home', href: '/' }];
-
-    return paths.map((path, idx) => {
-      const href = '/' + paths.slice(0, idx + 1).join('/');
-      let label = path.charAt(0).toUpperCase() + path.slice(1);
-
-      // Handle specific mappings
-      if (path === 'new') label = 'Create';
-      if (path === 'edit') label = 'Edit';
-      
-      // If it looks like a database CUID (25 chars standard format)
-      if (path.length >= 20) {
-        label = 'Details';
-      }
-
-      return { label, href };
-    });
-  };
-
-  const breadcrumbs = getBreadcrumbs();
-
   const displayName = user?.firstName || user?.username || user?.emailAddresses?.[0]?.emailAddress?.split('@')[0] || 'User';
   const avatarUrl = user?.imageUrl;
 
   return (
     <header className="sticky top-0 right-0 left-0 z-30 flex items-center justify-between h-16 px-6 bg-white/80 dark:bg-slate-900/80 backdrop-blur-md border-b border-slate-200/60 dark:border-slate-800/60 transition-colors">
-      {/* Left Area: Hamburger (Mobile) + Breadcrumbs */}
+      {/* Left Area: Hamburger (Mobile) + Business Switcher */}
       <div className="flex items-center gap-3">
         <Button
           variant="ghost"
@@ -66,31 +40,11 @@ export default function TopBar({ onToggleSidebar }: TopBarProps) {
           <Menu className="w-5 h-5" />
         </Button>
 
-        <nav aria-label="Breadcrumb" className="hidden sm:flex items-center gap-1.5 text-sm">
-          {breadcrumbs.map((crumb, idx) => (
-            <div key={crumb.href} className="flex items-center gap-1.5">
-              {idx > 0 && <span className="text-slate-300 dark:text-slate-700">/</span>}
-              <Link
-                href={crumb.href}
-                className={
-                  idx === breadcrumbs.length - 1
-                    ? 'font-semibold text-slate-800 dark:text-slate-200 pointer-events-none'
-                    : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-300 transition-colors'
-                }
-              >
-                {crumb.label}
-              </Link>
-            </div>
-          ))}
-        </nav>
+        <BusinessSelector />
       </div>
 
-      {/* Right Area: Actions + Notifications + Business Switcher + User */}
+      {/* Right Area: Actions + Notifications + User */}
       <div className="flex items-center gap-4">
-        {/* Business Switcher Dropdown */}
-        <div className="hidden xs:block">
-          <BusinessSelector />
-        </div>
 
         {/* Notifications Icon */}
         <Button

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Search, Plus, Check, FileSpreadsheet, Package, AlertCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -55,12 +55,14 @@ export default function ItemCatalogSelector({
   const [savingItem, setSavingItem] = useState(false);
 
   // Fetch catalog items
-  const fetchItems = async (searchQuery = '') => {
+  const fetchItems = useCallback(async (searchQuery = '') => {
     setLoading(true);
     try {
-      const url = searchQuery
-        ? `/api/items?search=${encodeURIComponent(searchQuery)}`
-        : '/api/items';
+      const params = new URLSearchParams();
+      if (searchQuery) params.append('search', searchQuery);
+      if (businessId) params.append('businessId', businessId);
+
+      const url = `/api/items?${params.toString()}`;
       const res = await fetch(url);
       if (res.ok) {
         const data = await res.json();
@@ -71,14 +73,14 @@ export default function ItemCatalogSelector({
     } finally {
       setLoading(false);
     }
-  };
+  }, [businessId]);
 
   useEffect(() => {
     if (open) {
       fetchItems(search);
       setIsCreatingNew(false);
     }
-  }, [open, search]);
+  }, [open, search, fetchItems]);
 
   const handleSelectItem = (item: CatalogItem) => {
     onSelect(item);

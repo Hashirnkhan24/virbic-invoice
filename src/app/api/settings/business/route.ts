@@ -24,7 +24,7 @@ const businessUpdateSchema = z.object({
   signature: z.string().optional().nullable().or(z.literal('')),
   brandColor: z.string().optional(),
   invoicePrefix: z.string().optional(),
-  invoiceNumber: z.number().int().optional(),
+  invoiceNumber: z.coerce.number().int().optional(),
   financialYear: z.string().optional(),
 });
 

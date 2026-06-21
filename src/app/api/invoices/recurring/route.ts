@@ -21,12 +21,12 @@ function calculateNextDueDate(startDate: Date, frequency: string): Date {
 const itemSchema = z.object({
   description: z.string(),
   hsnCode: z.string().optional().nullable(),
-  quantity: z.number(),
+  quantity: z.coerce.number(),
   unit: z.string().default('PCS'),
-  rate: z.number(),
-  discount: z.number().default(0),
+  rate: z.coerce.number(),
+  discount: z.coerce.number().default(0),
   discountType: z.enum(['PERCENTAGE', 'AMOUNT']).default('PERCENTAGE'),
-  gstRate: z.number().default(18),
+  gstRate: z.coerce.number().default(18),
 });
 
 const recurringCreateSchema = z.object({
@@ -49,15 +49,15 @@ const recurringCreateSchema = z.object({
   lineItems: z.array(itemSchema),
   
   // Totals
-  subTotal: z.number(),
-  discountTotal: z.number().default(0),
-  taxableAmount: z.number(),
-  cgstTotal: z.number().default(0),
-  sgstTotal: z.number().default(0),
-  igstTotal: z.number().default(0),
-  cessTotal: z.number().default(0),
-  roundOff: z.number().default(0),
-  grandTotal: z.number(),
+  subTotal: z.coerce.number(),
+  discountTotal: z.coerce.number().default(0),
+  taxableAmount: z.coerce.number(),
+  cgstTotal: z.coerce.number().default(0),
+  sgstTotal: z.coerce.number().default(0),
+  igstTotal: z.coerce.number().default(0),
+  cessTotal: z.coerce.number().default(0),
+  roundOff: z.coerce.number().default(0),
+  grandTotal: z.coerce.number(),
 });
 
 export async function GET() {

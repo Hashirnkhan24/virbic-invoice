@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { InvoiceStatus } from '@prisma/client';
 import { getAuthUser } from '@/lib/auth';
+import { syncClientCounters } from '@/lib/db/invoice-hooks';
+import { logClientActivity } from '@/lib/db/client-analytics';
 
 export async function PUT(
   request: NextRequest,
@@ -58,6 +60,33 @@ export async function PUT(
         lineItems: true,
       },
     });
+
+    // Sync client counters and log activity
+    try {
+      await syncClientCounters(updatedInvoice.clientId, user.id);
+      
+      const isNewPayment = status === 'PAID' && invoice.status !== 'PAID';
+      if (isNewPayment) {
+        const amt = amountPaid ? Number(amountPaid) : Number(updatedInvoice.grandTotal);
+        await logClientActivity({
+          clientId: updatedInvoice.clientId,
+          userId: user.id,
+          action: 'PAYMENT_RECEIVED',
+          details: `Payment received: Invoice ${updatedInvoice.invoiceNumber} marked as PAID`,
+          amount: amt,
+        });
+      } else {
+        await logClientActivity({
+          clientId: updatedInvoice.clientId,
+          userId: user.id,
+          action: 'INVOICE_UPDATED',
+          details: `Invoice ${updatedInvoice.invoiceNumber} status updated to ${status}`,
+          amount: Number(updatedInvoice.grandTotal),
+        });
+      }
+    } catch (syncErr) {
+      console.error('[INVOICE STATUS PUT API] Failed to sync client counters or log activity:', syncErr);
+    }
 
     return NextResponse.json({ invoice: updatedInvoice });
   } catch (error: any) {

@@ -97,7 +97,9 @@ export default function InvoicesPage() {
   useEffect(() => {
     async function fetchClients() {
       try {
-        const res = await fetch('/api/clients');
+        const activeBizId = localStorage.getItem('active_business_id')?.replace(/^"|"$/g, '');
+        const url = activeBizId ? `/api/clients?businessId=${activeBizId}` : '/api/clients';
+        const res = await fetch(url);
         if (res.ok) {
           const data = await res.json();
           setClients(data.clients || []);
@@ -137,12 +139,14 @@ export default function InvoicesPage() {
         if (customDateTo) dateTo = new Date(customDateTo).toISOString();
       }
 
+      const activeBizId = localStorage.getItem('active_business_id')?.replace(/^"|"$/g, '');
       const params = new URLSearchParams({
         status: statusTab,
         page: String(page),
         limit: String(limit),
       });
 
+      if (activeBizId) params.append('businessId', activeBizId);
       if (selectedClient !== 'ALL') params.append('clientId', selectedClient);
       if (search.trim()) params.append('search', search.trim());
       if (dateFrom) params.append('dateFrom', dateFrom);

@@ -2,7 +2,7 @@
 
 import { useEffect } from 'react';
 import Link from 'next/link';
-import { Building2, ChevronDown, Plus, Check } from 'lucide-react';
+import { Building2, ChevronDown, Plus, Check, Layers } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { buttonVariants } from '@/components/ui/button';
 import { useGetBusinesses } from '@/hooks/useBusiness';
@@ -27,13 +27,11 @@ export default function BusinessSelector() {
   useEffect(() => {
     if (businesses.length > 0) {
       const exists = businesses.some((b) => b.id === activeBusinessId);
-      if (!activeBusinessId || !exists) {
+      if (!activeBusinessId || (!exists && activeBusinessId !== 'all')) {
         const defaultBusiness = businesses.find((b) => b.isDefault);
-        if (defaultBusiness) {
-          setActiveBusinessId(defaultBusiness.id);
-        } else {
-          setActiveBusinessId(businesses[0].id);
-        }
+        const nextId = defaultBusiness ? defaultBusiness.id : businesses[0].id;
+        setActiveBusinessId(nextId);
+        document.cookie = `active_business_id=${nextId}; path=/; max-age=31536000; SameSite=Lax`;
       }
     }
   }, [businesses, activeBusinessId, setActiveBusinessId]);
@@ -79,7 +77,9 @@ export default function BusinessSelector() {
           "flex items-center gap-2 border-slate-200/80 dark:border-slate-850 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800/40 select-none cursor-pointer"
         )}
       >
-        {activeBusiness?.logo ? (
+        {activeBusinessId === 'all' ? (
+          <Layers className="w-4.5 h-4.5 text-emerald-500 dark:text-emerald-400" />
+        ) : activeBusiness?.logo ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img
             src={activeBusiness.logo}
@@ -90,7 +90,7 @@ export default function BusinessSelector() {
           <Building2 className="w-4 h-4 text-emerald-500 dark:text-emerald-400" />
         )}
         <span className="max-w-[120px] truncate font-semibold">
-          {activeBusiness?.name || 'Select Business'}
+          {activeBusinessId === 'all' ? 'All Businesses' : activeBusiness?.name || 'Select Business'}
         </span>
         <ChevronDown className="w-3.5 h-3.5 text-slate-400" />
       </DropdownMenuTrigger>
@@ -102,6 +102,32 @@ export default function BusinessSelector() {
         <DropdownMenuSeparator />
         
         <div className="max-h-60 overflow-y-auto">
+          {/* Consolidated View Option */}
+          <DropdownMenuItem
+            onClick={() => {
+              setActiveBusinessId('all');
+              document.cookie = `active_business_id=all; path=/; max-age=31536000; SameSite=Lax`;
+              window.dispatchEvent(new CustomEvent('active-business-changed', { detail: 'all' }));
+              window.location.reload();
+            }}
+            className={cn(
+              "flex items-center justify-between cursor-pointer py-2 px-2.5 rounded-md my-0.5",
+              activeBusinessId === 'all'
+                ? "bg-emerald-50/70 dark:bg-emerald-950/20 text-emerald-600 dark:text-emerald-400 font-semibold"
+                : "hover:bg-slate-50 dark:hover:bg-slate-800/40 text-slate-700 dark:text-slate-350"
+            )}
+          >
+            <div className="flex items-center gap-2 overflow-hidden">
+              <Layers className="w-5 h-5 text-emerald-500/80 dark:text-emerald-450 flex-shrink-0" />
+              <div className="flex flex-col text-left overflow-hidden">
+                <span className="text-sm">All Businesses</span>
+                <span className="text-[10px] text-slate-450 font-medium">Consolidated overview</span>
+              </div>
+            </div>
+            {activeBusinessId === 'all' && <Check className="w-4 h-4 text-emerald-500 flex-shrink-0 ml-2" />}
+          </DropdownMenuItem>
+          <DropdownMenuSeparator className="opacity-40" />
+
           {businesses.map((biz) => {
             const isSelected = biz.id === activeBusinessId;
             return (
@@ -109,8 +135,11 @@ export default function BusinessSelector() {
                 key={biz.id}
                 onClick={() => {
                   setActiveBusinessId(biz.id);
+                  document.cookie = `active_business_id=${biz.id}; path=/; max-age=31536000; SameSite=Lax`;
                   // Dispatch custom event to notify other components of active business change
                   window.dispatchEvent(new CustomEvent('active-business-changed', { detail: biz.id }));
+                  // Reload the page to refresh server components and client lists
+                  window.location.reload();
                 }}
                 className={cn(
                   "flex items-center justify-between cursor-pointer py-2 px-2.5 rounded-md my-0.5",

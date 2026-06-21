@@ -31,6 +31,7 @@ export interface Business {
   invoiceNumber: number;
   financialYear: string;
   isDefault: boolean;
+  currency: string;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -52,6 +53,12 @@ export interface Client {
   shippingState?: string;
   shippingPincode?: string;
   notes?: string;
+  totalBilled?: number;
+  totalOutstanding?: number;
+  invoiceCount?: number;
+  lastInvoiceDate?: Date | string | null;
+  isDeleted?: boolean;
+  deletedAt?: Date | string | null;
   createdAt: Date;
   updatedAt: Date;
 }

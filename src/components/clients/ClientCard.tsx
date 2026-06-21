@@ -10,7 +10,9 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { cn } from '@/lib/utils';
+import {cn} from '@/lib/utils';
+import { format } from 'date-fns';
+import { formatCurrency } from '@/lib/helpers';
 
 interface ClientCardProps {
   client: ClientWithDetails;
@@ -29,9 +31,18 @@ function getInitials(name: string) {
   return name.slice(0, 2).toUpperCase();
 }
 
+const formatLastInvoiceDate = (dateVal: any) => {
+  if (!dateVal) return '';
+  try {
+    return `${format(new Date(dateVal), 'dd MMM yyyy')}`;
+  } catch {
+    return '';
+  }
+};
+
 export default function ClientCard({ client, onView, onEdit, onDelete }: ClientCardProps) {
   const initials = getInitials(client.name);
-  const invoiceCount = client._count?.invoices || 0;
+  const invoiceCount = client.invoiceCount || client._count?.invoices || 0;
 
   // Stagger entry animation on mount
   const cardVariants = {
@@ -49,7 +60,10 @@ export default function ClientCard({ client, onView, onEdit, onDelete }: ClientC
       initial="hidden"
       animate="visible"
       whileHover={{ y: -2, boxShadow: 'var(--shadow-md)' }}
-      className="bg-white dark:bg-slate-900 border border-slate-200/60 dark:border-slate-800/80 rounded-xl p-5 shadow-sm transition-all duration-200 flex flex-col justify-between"
+      className={cn(
+        "bg-white dark:bg-slate-900 border border-slate-200/60 dark:border-slate-800/80 rounded-xl p-5 shadow-sm transition-all duration-200 flex flex-col justify-between",
+        Number(client.totalOutstanding || 0) > 0 && "border-l-4 border-l-amber-500"
+      )}
     >
       <div className="space-y-4">
         {/* Card Top: Avatar, Name & GSTIN */}
@@ -142,6 +156,27 @@ export default function ClientCard({ client, onView, onEdit, onDelete }: ClientC
             </div>
           )}
         </div>
+
+        {/* Financial Badges */}
+        <div className="grid grid-cols-2 gap-2 text-left pt-3 border-t border-slate-100/60 dark:border-slate-800/40">
+          <div className="bg-slate-50/50 dark:bg-slate-950/40 rounded-lg p-2 border border-slate-100/50 dark:border-slate-850/30">
+            <span className="text-[9px] font-extrabold uppercase tracking-wider text-slate-400 dark:text-slate-500">Billed</span>
+            <div className="text-xs font-bold text-emerald-650 dark:text-emerald-450 mt-0.5">
+              {formatCurrency(Number(client.totalBilled || 0), 'INR')}
+            </div>
+          </div>
+          <div className={cn(
+            "rounded-lg p-2 border",
+            Number(client.totalOutstanding || 0) > 0 
+              ? "bg-amber-50/20 dark:bg-amber-950/10 border-amber-100/60 dark:border-amber-900/20 text-amber-850 dark:text-amber-400" 
+              : "bg-slate-50/50 dark:bg-slate-950/40 border-slate-100/50 dark:border-slate-850/30 text-slate-500 dark:text-slate-450"
+          )}>
+            <span className="text-[9px] font-extrabold uppercase tracking-wider text-slate-400 dark:text-slate-500">Outstanding</span>
+            <div className="text-xs font-bold mt-0.5">
+              {formatCurrency(Number(client.totalOutstanding || 0), 'INR')}
+            </div>
+          </div>
+        </div>
       </div>
 
       {/* Card Bottom: Invoices Stats & Action button */}
@@ -159,6 +194,12 @@ export default function ClientCard({ client, onView, onEdit, onDelete }: ClientC
             {invoiceCount} {invoiceCount === 1 ? 'invoice' : 'invoices'}
           </span>
         </span>
+
+        {client.lastInvoiceDate && (
+          <span className="text-[9px] font-bold text-slate-400 dark:text-slate-500 truncate max-w-[120px]" title={`Last invoice: ${formatLastInvoiceDate(client.lastInvoiceDate)}`}>
+            {formatLastInvoiceDate(client.lastInvoiceDate)}
+          </span>
+        )}
 
         <Button
           variant="outline"

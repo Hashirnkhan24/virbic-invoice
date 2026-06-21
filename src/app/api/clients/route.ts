@@ -31,7 +31,7 @@ const clientSchema = z.object({
   businessId: z.string().optional().nullable().or(z.literal('')),
 });
 
-// GET: List all clients (with optional search)
+// GET: List all clients (with optional search, sorting, and filters)
 export async function GET(request: NextRequest) {
   try {
     const { error, dbUser } = await getAuthUser();
@@ -39,6 +39,17 @@ export async function GET(request: NextRequest) {
     const user = dbUser!;
     const searchParams = request.nextUrl.searchParams;
     const search = searchParams.get('search');
+    let businessId = searchParams.get('businessId');
+    if (businessId) {
+      businessId = businessId.replace(/^"|"$/g, '');
+      if (businessId === 'null' || businessId === 'undefined') {
+        businessId = null;
+      }
+    }
+
+    const includeDeleted = searchParams.get('includeDeleted') === 'true';
+    const minOutstanding = searchParams.get('minOutstanding') === 'true';
+    const sortBy = searchParams.get('sortBy');
 
     const searchCondition = search
       ? {
@@ -51,16 +62,49 @@ export async function GET(request: NextRequest) {
         }
       : {};
 
-    const clients = await prisma.client.findMany({
+    const businessCondition = (businessId && businessId !== 'all')
+      ? {
+          OR: [
+            { businessId: businessId },
+            { businessId: null },
+            { invoices: { some: { businessId: businessId } } },
+          ],
+        }
+      : {};
+
+    const isDeletedCondition = includeDeleted ? {} : { isDeleted: false };
+    
+    // If business-scoped, we apply minOutstanding and sorting in memory to ensure accuracy
+    const isScoped = businessId && businessId !== 'all';
+    const dbOutstandingCondition = (minOutstanding && !isScoped) ? { totalOutstanding: { gt: 0 } } : {};
+    
+    let dbOrderBy: any = { name: 'asc' };
+    if (!isScoped) {
+      if (sortBy === 'revenue') {
+        dbOrderBy = { totalBilled: 'desc' };
+      } else if (sortBy === 'outstanding') {
+        dbOrderBy = { totalOutstanding: 'desc' };
+      } else if (sortBy === 'recent') {
+        dbOrderBy = { lastInvoiceDate: 'desc' };
+      } else if (sortBy === 'name') {
+        dbOrderBy = { name: 'asc' };
+      }
+    }
+
+    const rawClients = await prisma.client.findMany({
       where: {
         userId: user.id,
+        ...businessCondition,
         ...searchCondition,
+        ...isDeletedCondition,
+        ...dbOutstandingCondition,
       },
       include: {
         _count: {
           select: { invoices: true },
         },
         invoices: {
+          where: isScoped ? { businessId: businessId as string } : {},
           take: 5,
           orderBy: { issueDate: 'desc' },
           select: {
@@ -72,8 +116,90 @@ export async function GET(request: NextRequest) {
           },
         },
       },
-      orderBy: { name: 'asc' },
+      orderBy: dbOrderBy,
     });
+
+    let clients = rawClients.map(c => ({
+      ...c,
+      totalBilled: Number(c.totalBilled),
+      totalOutstanding: Number(c.totalOutstanding),
+    }));
+
+    if (isScoped && businessId) {
+      const activeBizId = businessId;
+      // Fetch dynamic metrics for all clients for this business
+      const [paidAgg, outstandingAgg, totalAgg] = await Promise.all([
+        prisma.invoice.groupBy({
+          by: ['clientId'],
+          where: {
+            userId: user.id,
+            businessId: activeBizId,
+            status: 'PAID',
+          },
+          _sum: { grandTotal: true },
+        }),
+        prisma.invoice.groupBy({
+          by: ['clientId'],
+          where: {
+            userId: user.id,
+            businessId: activeBizId,
+            status: { in: ['SENT', 'OVERDUE', 'PARTIAL'] },
+          },
+          _sum: { grandTotal: true },
+        }),
+        prisma.invoice.groupBy({
+          by: ['clientId'],
+          where: {
+            userId: user.id,
+            businessId: activeBizId,
+          },
+          _count: { id: true },
+          _max: { issueDate: true },
+        }),
+      ]);
+
+      const paidMap = new Map(paidAgg.map(item => [item.clientId, Number((item as any)._sum?.grandTotal || 0)]));
+      const outstandingMap = new Map(outstandingAgg.map(item => [item.clientId, Number((item as any)._sum?.grandTotal || 0)]));
+      const totalMap = new Map(totalAgg.map(item => [item.clientId, {
+        count: Number((item as any)._count?.id || (item as any)._count?._all || 0),
+        lastDate: (item as any)._max?.issueDate || null,
+      }]));
+
+      clients = clients.map(client => {
+        const billed = paidMap.get(client.id) || 0;
+        const outstanding = outstandingMap.get(client.id) || 0;
+        const totals = totalMap.get(client.id) || { count: 0, lastDate: null };
+
+        return {
+          ...client,
+          totalBilled: billed,
+          totalOutstanding: outstanding,
+          invoiceCount: totals.count,
+          lastInvoiceDate: totals.lastDate,
+        };
+      });
+
+      // Filter by minOutstanding in memory
+      if (minOutstanding) {
+        clients = clients.filter(c => c.totalOutstanding > 0);
+      }
+
+      // Sort in memory
+      if (sortBy === 'revenue') {
+        clients.sort((a, b) => b.totalBilled - a.totalBilled);
+      } else if (sortBy === 'outstanding') {
+        clients.sort((a, b) => b.totalOutstanding - a.totalOutstanding);
+      } else if (sortBy === 'recent') {
+        clients.sort((a, b) => {
+          const dateA = a.lastInvoiceDate ? new Date(a.lastInvoiceDate).getTime() : 0;
+          const dateB = b.lastInvoiceDate ? new Date(b.lastInvoiceDate).getTime() : 0;
+          return dateB - dateA;
+        });
+      } else {
+        // default by name
+        clients.sort((a, b) => a.name.localeCompare(b.name));
+      }
+    }
 
     return NextResponse.json({ clients }, { status: 200 });
   } catch (error: any) {
@@ -258,19 +384,22 @@ export async function DELETE(request: NextRequest) {
     });
 
     if (invoicesCount > 0) {
-      return NextResponse.json(
-        {
-          error: `Cannot delete client. This client has ${invoicesCount} associated invoice(s). Please delete their invoices first.`,
+      // Soft-delete
+      await prisma.client.update({
+        where: { id },
+        data: {
+          isDeleted: true,
+          deletedAt: new Date(),
         },
-        { status: 400 }
-      );
+      });
+      return NextResponse.json({ success: true, isSoftDeleted: true, message: 'Client soft-deleted (archived) successfully' }, { status: 200 });
     }
 
     await prisma.client.delete({
       where: { id },
     });
 
-    return NextResponse.json({ success: true }, { status: 200 });
+    return NextResponse.json({ success: true, isSoftDeleted: false, message: 'Client deleted permanently' }, { status: 200 });
   } catch (error: any) {
     console.error('Error deleting client:', error);
     return NextResponse.json(

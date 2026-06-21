@@ -16,16 +16,35 @@ export interface ClientWithDetails extends Client {
 }
 
 // Query hook to fetch clients
-export function useGetClients(search: string = '') {
+export function useGetClients(
+  search: string = '',
+  options?: {
+    sortBy?: string;
+    minOutstanding?: boolean;
+    includeDeleted?: boolean;
+  }
+) {
   const [clients, setClients] = useState<ClientWithDetails[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
+
+  const sortBy = options?.sortBy;
+  const minOutstanding = options?.minOutstanding;
+  const includeDeleted = options?.includeDeleted;
 
   const fetchClients = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const url = search ? `/api/clients?search=${encodeURIComponent(search)}` : '/api/clients';
+      const activeBizId = typeof window !== 'undefined' ? localStorage.getItem('active_business_id')?.replace(/^"|"$/g, '') : null;
+      const params = new URLSearchParams();
+      if (search) params.append('search', search);
+      if (activeBizId) params.append('businessId', activeBizId);
+      if (sortBy) params.append('sortBy', sortBy);
+      if (minOutstanding) params.append('minOutstanding', 'true');
+      if (includeDeleted) params.append('includeDeleted', 'true');
+
+      const url = `/api/clients?${params.toString()}`;
       const response = await fetch(url);
       if (!response.ok) {
         throw new Error('Failed to fetch clients');
@@ -37,7 +56,7 @@ export function useGetClients(search: string = '') {
     } finally {
       setLoading(false);
     }
-  }, [search]);
+  }, [search, sortBy, minOutstanding, includeDeleted]);
 
   useEffect(() => {
     fetchClients();

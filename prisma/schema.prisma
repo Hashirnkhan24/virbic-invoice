@@ -94,6 +94,17 @@ model Client {
   shippingState   String?
   shippingPincode String?
   notes           String?
+  
+  // Lightweight counters for quick display
+  totalBilled      Decimal  @default(0.00) @db.Decimal(12, 2)  // Sum of PAID invoices
+  totalOutstanding Decimal  @default(0.00) @db.Decimal(12, 2)  // Sum of SENT + OVERDUE + PARTIAL
+  invoiceCount     Int      @default(0)                        // Total invoices created
+  lastInvoiceDate  DateTime?                                    // Most recent invoice issueDate
+  
+  // Soft delete for client with invoice history
+  isDeleted        Boolean  @default(false)
+  deletedAt        DateTime?
+  
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
   
@@ -297,4 +308,31 @@ model InvoiceReminder {
   
   invoice     Invoice  @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
   @@index([invoiceId])
+}
+
+// Client activity log (lightweight audit trail)
+model ClientActivity {
+  id        String   @id @default(cuid())
+  clientId  String
+  userId    String
+  action    String   // INVOICE_CREATED, PAYMENT_RECEIVED, REMINDER_SENT, NOTE_ADDED
+  details   String?  // Human-readable description
+  amount    Decimal? @db.Decimal(12, 2) // If payment-related
+  createdAt DateTime @default(now())
+  
+  @@index([clientId])
+  @@index([userId])
+}
+
+// Client notes (ad-hoc notes per client)
+model ClientNote {
+  id        String   @id @default(cuid())
+  clientId  String
+  userId    String
+  content   String   @db.Text
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  @@index([clientId])
+  @@index([userId])
 }

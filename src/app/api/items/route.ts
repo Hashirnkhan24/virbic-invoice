@@ -10,8 +10,8 @@ const itemSchema = z.object({
   name: z.string().min(1, 'Item name is required'),
   description: z.string().optional().nullable().or(z.literal('')),
   hsnCode: z.string().optional().nullable().or(z.literal('')),
-  rate: z.number().min(0, 'Rate must be greater than or equal to 0'),
-  gstRate: z.number().default(18.00),
+  rate: z.coerce.number().min(0, 'Rate must be greater than or equal to 0'),
+  gstRate: z.coerce.number().default(18.00),
   unit: z.string().default('PCS'),
   businessId: z.string().optional().nullable().or(z.literal('')),
 });
@@ -24,6 +24,13 @@ export async function GET(request: NextRequest) {
     const user = dbUser!;
     const { searchParams } = new URL(request.url);
     const search = searchParams.get('search');
+    let businessId = searchParams.get('businessId');
+    if (businessId) {
+      businessId = businessId.replace(/^"|"$/g, '');
+      if (businessId === 'null' || businessId === 'undefined') {
+        businessId = null;
+      }
+    }
 
     const searchCondition = search
       ? {
@@ -35,9 +42,19 @@ export async function GET(request: NextRequest) {
         }
       : {};
 
+    const businessCondition = (businessId && businessId !== 'all')
+      ? {
+          OR: [
+            { businessId: businessId },
+            { businessId: null },
+          ],
+        }
+      : {};
+
     const items = await prisma.item.findMany({
       where: {
         userId: user.id,
+        ...businessCondition,
         ...searchCondition,
       },
       orderBy: { name: 'asc' },

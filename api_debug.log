@@ -1,0 +1,108 @@
+[2026-06-21T12:51:14.037Z] CLIENTS GET:
+- searchParams: search=null, businessId=all, includeDeleted=true, minOutstanding=false, sortBy=null
+- where: {
+  "userId": "cmqm5zv6w0000307k26vu71mh"
+}
+
+[2026-06-21T12:51:14.085Z] CLIENTS GET:
+- searchParams: search=null, businessId=all, includeDeleted=false, minOutstanding=false, sortBy=name
+- where: {
+  "userId": "cmqm5zv6w0000307k26vu71mh",
+  "isDeleted": false
+}
+
+[2026-06-21T12:51:20.225Z] CLIENTS GET:
+- searchParams: search=null, businessId=all, includeDeleted=false, minOutstanding=false, sortBy=name
+- where: {
+  "userId": "cmqm5zv6w0000307k26vu71mh",
+  "isDeleted": false
+}
+
+[2026-06-21T12:51:20.961Z] CLIENTS GET:
+- searchParams: search=null, businessId=all, includeDeleted=true, minOutstanding=false, sortBy=null
+- where: {
+  "userId": "cmqm5zv6w0000307k26vu71mh"
+}
+
+[2026-06-21T12:52:33.027Z] CLIENTS GET:
+- searchParams: search=null, businessId=all, includeDeleted=false, minOutstanding=false, sortBy=name
+- where: {
+  "userId": "cmqm5zv6w0000307k26vu71mh",
+  "isDeleted": false
+}
+
+[2026-06-21T12:52:33.813Z] CLIENTS GET:
+- searchParams: search=null, businessId=all, includeDeleted=true, minOutstanding=false, sortBy=null
+- where: {
+  "userId": "cmqm5zv6w0000307k26vu71mh"
+}
+
+[2026-06-21T12:53:06.731Z] CLIENTS GET:
+- searchParams: search=null, businessId=all, includeDeleted=true, minOutstanding=false, sortBy=null
+- where: {
+  "userId": "cmqm5zv6w0000307k26vu71mh"
+}
+
+[2026-06-21T12:53:06.744Z] CLIENTS GET:
+- searchParams: search=null, businessId=all, includeDeleted=false, minOutstanding=false, sortBy=name
+- where: {
+  "userId": "cmqm5zv6w0000307k26vu71mh",
+  "isDeleted": false
+}
+
+[2026-06-21T12:54:27.840Z] CLIENTS GET:
+- searchParams: search=null, businessId=all, includeDeleted=false, minOutstanding=false, sortBy=name
+- where: {
+  "userId": "cmqm5zv6w0000307k26vu71mh",
+  "isDeleted": false
+}
+
+[2026-06-21T12:54:28.157Z] CLIENTS GET:
+- searchParams: search=null, businessId=all, includeDeleted=true, minOutstanding=false, sortBy=null
+- where: {
+  "userId": "cmqm5zv6w0000307k26vu71mh"
+}
+
+[2026-06-21T12:55:17.572Z] CLIENTS GET:
+- searchParams: search=null, businessId=all, includeDeleted=true, minOutstanding=false, sortBy=null
+- where: {
+  "userId": "cmqm5zv6w0000307k26vu71mh"
+}
+
+[2026-06-21T12:55:17.585Z] CLIENTS GET:
+- searchParams: search=null, businessId=all, includeDeleted=false, minOutstanding=false, sortBy=name
+- where: {
+  "userId": "cmqm5zv6w0000307k26vu71mh",
+  "isDeleted": false
+}
+
+[2026-06-21T12:55:18.191Z] CLIENTS GET:
+- searchParams: search=null, businessId=all, includeDeleted=true, minOutstanding=false, sortBy=null
+- where: {
+  "userId": "cmqm5zv6w0000307k26vu71mh"
+}
+
+[2026-06-21T12:55:18.227Z] CLIENTS GET:
+- searchParams: search=null, businessId=all, includeDeleted=false, minOutstanding=false, sortBy=name
+- where: {
+  "userId": "cmqm5zv6w0000307k26vu71mh",
+  "isDeleted": false
+}
+
+[2026-06-21T12:56:06.311Z] CLIENTS GET:
+- searchParams: search=null, businessId=all, includeDeleted=false, minOutstanding=true, sortBy=name
+- where: {
+  "userId": "cmqm5zv6w0000307k26vu71mh",
+  "isDeleted": false,
+  "totalOutstanding": {
+    "gt": 0
+  }
+}
+
+[2026-06-21T12:56:08.708Z] CLIENTS GET:
+- searchParams: search=null, businessId=all, includeDeleted=false, minOutstanding=false, sortBy=name
+- where: {
+  "userId": "cmqm5zv6w0000307k26vu71mh",
+  "isDeleted": false
+}
+

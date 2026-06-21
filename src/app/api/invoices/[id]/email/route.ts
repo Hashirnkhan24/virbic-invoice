@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { sendInvoiceEmail } from '@/lib/email-service';
 import { getAuthUser } from '@/lib/auth';
+import { syncClientCounters } from '@/lib/db/invoice-hooks';
+import { logClientActivity } from '@/lib/db/client-analytics';
 
 export async function POST(
   request: NextRequest,
@@ -64,6 +66,20 @@ export async function POST(
           reminders: true,
         },
       });
+
+      // Sync client counters and log activity
+      try {
+        await syncClientCounters(invoice.clientId, user.id);
+        await logClientActivity({
+          clientId: invoice.clientId,
+          userId: user.id,
+          action: 'REMINDER_SENT',
+          details: `Payment reminder sent for Invoice ${invoice.invoiceNumber}`,
+          amount: Number(invoice.grandTotal),
+        });
+      } catch (syncErr) {
+        console.error('[INVOICE EMAIL API] Failed to sync client counters or log activity:', syncErr);
+      }
     }
 
     // Helper to format decimals in updatedInvoice if it exists

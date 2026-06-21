@@ -50,7 +50,7 @@ const businessSchema = z.object({
   signature: z.string().optional().nullable(),
   brandColor: z.string().default('#10b981'),
   invoicePrefix: z.string().max(10, 'Prefix must be 10 characters or less').default('INV'),
-  invoiceNumber: z.number().int().nonnegative().default(1),
+  invoiceNumber: z.coerce.number().int().nonnegative().default(1),
   financialYear: z.string().default('2026-27'),
   isDefault: z.boolean().default(false),
 });

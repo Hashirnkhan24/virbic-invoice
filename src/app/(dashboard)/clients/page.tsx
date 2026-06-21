@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useMemo } from 'react';
+import { useRouter } from 'next/navigation';
 import {
   Users,
   Building2,
@@ -28,13 +29,30 @@ import {
   ClientWithDetails,
 } from '@/hooks/useClients';
 import { toast } from 'sonner';
+import { formatCurrency } from '@/lib/helpers';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 
 export default function ClientsPage() {
+  const router = useRouter();
   const [search, setSearch] = useState('');
-  const { clients, loading, refetch } = useGetClients(search);
+  const [sortBy, setSortBy] = useState<string>('name');
+  const [minOutstanding, setMinOutstanding] = useState<boolean>(false);
+  const [includeDeleted, setIncludeDeleted] = useState<boolean>(false);
 
-  // Separate query for total counts so stats cards remain stable during search
-  const { clients: allClients, refetch: refetchAllCounts } = useGetClients('');
+  const { clients, loading, error, refetch } = useGetClients(search, {
+    sortBy,
+    minOutstanding,
+    includeDeleted,
+  });
+
+  // Separate query for total counts so stats cards remain stable during search/filters
+  const { clients: allClients, refetch: refetchAllCounts } = useGetClients('', { includeDeleted: true });
 
   // Dialog & drawer states
   const [isFormOpen, setIsFormOpen] = useState(false);
@@ -53,20 +71,28 @@ export default function ClientsPage() {
 
   // Aggregate stats from the full (unfiltered) list
   const stats = useMemo(() => {
-    const total = allClients.length;
-    const gstinCount = allClients.filter((c) => !!c.gstin).length;
+    // Only aggregate active clients
+    const activeClients = allClients.filter((c) => !c.isDeleted);
+    const total = activeClients.length;
     
-    // Recent clients (created in the last 30 days)
-    const thirtyDaysAgo = new Date();
-    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-    const recentCount = allClients.filter(
-      (c) => new Date(c.createdAt) >= thirtyDaysAgo
-    ).length;
+    const totalOutstanding = activeClients.reduce((sum, c) => sum + (Number(c.totalOutstanding) || 0), 0);
+    
+    // Find top client by revenue (billed)
+    let topClient: ClientWithDetails | null = null;
+    let maxRevenue = 0;
+    activeClients.forEach((c) => {
+      const billed = Number(c.totalBilled) || 0;
+      if (billed > maxRevenue) {
+        maxRevenue = billed;
+        topClient = c;
+      }
+    });
 
     return {
       total,
-      gstinCount,
-      recentCount,
+      totalOutstanding,
+      topClientName: topClient ? (topClient as any).name : 'None',
+      topClientRevenue: maxRevenue,
     };
   }, [allClients]);
 
@@ -78,8 +104,7 @@ export default function ClientsPage() {
 
   // Handle view details
   const handleViewClient = (client: ClientWithDetails) => {
-    setSelectedClient(client);
-    setIsDetailOpen(true);
+    router.push(`/clients/${client.id}`);
   };
 
   // Handle edit details
@@ -98,17 +123,28 @@ export default function ClientsPage() {
   // Handle form submit (save or update, single or bulk CSV list)
   const handleFormSubmit = async (data: any) => {
     try {
+      const activeBizId = typeof window !== 'undefined' ? localStorage.getItem('active_business_id')?.replace(/^"|"$/g, '') : null;
+
       if (Array.isArray(data)) {
         // Bulk import CSV rows
-        await create(data);
+        const mappedData = data.map((row) => ({
+          ...row,
+          businessId: activeBizId || null,
+        }));
+        await create(mappedData);
         toast.success(`Successfully imported ${data.length} clients!`);
       } else {
         // Single client save/update
+        const payload = {
+          ...data,
+          businessId: selectedClient ? (selectedClient.businessId || activeBizId || null) : (activeBizId || null),
+        };
+
         if (selectedClient) {
-          await update(selectedClient.id, data);
+          await update(selectedClient.id, payload);
           toast.success('Client updated successfully');
         } else {
-          await create(data);
+          await create(payload);
           toast.success('Client created successfully');
         }
       }
@@ -188,32 +224,82 @@ export default function ClientsPage() {
         }
       />
 
+      {error && (
+        <div className="p-4 bg-red-500/10 border border-red-500/20 rounded-xl flex items-center gap-2.5 text-left text-xs font-semibold text-red-650 dark:text-red-400">
+          <AlertCircle className="w-4 h-4 text-red-500 flex-shrink-0" />
+          <span>Error loading registry: {error}</span>
+        </div>
+      )}
+
       {/* Stats Cards Row */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-5">
         <StatCard
           title="Total Clients"
           value={stats.total}
-          icon={<Users className="w-5 h-5" />}
+          icon={<Users className="w-5 h-5 text-emerald-500" />}
         />
         <StatCard
-          title="GSTIN Registered"
-          value={stats.gstinCount}
-          icon={<Building2 className="w-5 h-5" />}
+          title="Total Outstanding"
+          value={formatCurrency(stats.totalOutstanding, 'INR')}
+          icon={<AlertCircle className="w-5 h-5 text-amber-550" />}
         />
         <StatCard
-          title="Recent Additions"
-          value={stats.recentCount}
-          icon={<UserPlus className="w-5 h-5" />}
+          title="Top Client (Revenue)"
+          value={stats.topClientRevenue > 0 ? `${stats.topClientName} (${formatCurrency(stats.topClientRevenue, 'INR')})` : 'N/A'}
+          icon={<Building2 className="w-5 h-5 text-indigo-500" />}
         />
       </div>
 
       {/* Toolbar / Search Section */}
-      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4 py-1.5">
-        <SearchInput
-          onChange={setSearch}
-          placeholder="Filter clients by name, GSTIN, email, or city..."
-          className="w-full sm:max-w-md"
-        />
+      <div className="flex flex-col gap-4 py-1.5 border-b border-slate-100 dark:border-slate-800/80 pb-4">
+        <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-4">
+          <SearchInput
+            onChange={setSearch}
+            placeholder="Filter clients by name, GSTIN, email, or city..."
+            className="w-full lg:max-w-md"
+          />
+          
+          <div className="flex flex-wrap items-center gap-3">
+            {/* Sort Dropdown */}
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400 dark:text-slate-500">Sort By</span>
+              <Select value={sortBy} onValueChange={(val) => setSortBy(val || 'name')}>
+                <SelectTrigger className="h-9 w-[150px] text-xs font-semibold border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 rounded-lg shadow-sm">
+                  <SelectValue placeholder="Sort by" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="name" className="text-xs font-semibold">Name (A-Z)</SelectItem>
+                  <SelectItem value="revenue" className="text-xs font-semibold">Revenue (Highest)</SelectItem>
+                  <SelectItem value="outstanding" className="text-xs font-semibold">Outstanding (Highest)</SelectItem>
+                  <SelectItem value="recent" className="text-xs font-semibold">Recent Invoice</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Min Outstanding Toggle */}
+            <label className="flex items-center gap-2 px-3 h-9 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg shadow-sm cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={minOutstanding}
+                onChange={(e) => setMinOutstanding(e.target.checked)}
+                className="w-3.5 h-3.5 text-emerald-600 border-slate-300 dark:border-slate-800 rounded focus:ring-emerald-500 cursor-pointer"
+              />
+              <span className="text-xs font-semibold text-slate-700 dark:text-slate-350">Has Balance</span>
+            </label>
+
+            {/* Include Deleted Toggle */}
+            <label className="flex items-center gap-2 px-3 h-9 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg shadow-sm cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={includeDeleted}
+                onChange={(e) => setIncludeDeleted(e.target.checked)}
+                className="w-3.5 h-3.5 text-emerald-600 border-slate-300 dark:border-slate-800 rounded focus:ring-emerald-500 cursor-pointer"
+              />
+              <span className="text-xs font-semibold text-slate-700 dark:text-slate-355">Show Archived</span>
+            </label>
+          </div>
+        </div>
+
         {search && (
           <div className="text-xs text-slate-400 font-semibold text-left">
             Found {clients.length} matching client{clients.length === 1 ? '' : 's'}

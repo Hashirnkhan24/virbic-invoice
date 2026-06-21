@@ -26,6 +26,16 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { buttonVariants } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@clerk/nextjs';
+import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import TemplateRenderer, { TEMPLATE_META } from '@/components/invoice-templates/TemplateRenderer';
+import { TemplateName, DEFAULT_SETTINGS } from '@/components/invoice-templates/types';
+import { Button } from '@/components/ui/button';
 
 // Grayscale marquee items
 const MARQUEE_ITEMS = [
@@ -63,6 +73,7 @@ const TESTIMONIALS = [
 // Templates data
 const TEMPLATE_PREVIEWS = [
   {
+    id: 'modern' as TemplateName,
     name: 'Modern',
     desc: 'Clean layouts with emerald accents',
     border: 'border-t-4 border-emerald-500',
@@ -70,6 +81,7 @@ const TEMPLATE_PREVIEWS = [
     color: 'text-emerald-500',
   },
   {
+    id: 'minimal' as TemplateName,
     name: 'Minimal',
     desc: 'Ultra-clean design with lots of whitespace',
     border: 'border-l-4 border-slate-400',
@@ -77,6 +89,7 @@ const TEMPLATE_PREVIEWS = [
     color: 'text-slate-400',
   },
   {
+    id: 'professional' as TemplateName,
     name: 'Professional',
     desc: 'Navy header bars and structured blocks',
     border: 'border-t-8 border-indigo-600',
@@ -84,6 +97,7 @@ const TEMPLATE_PREVIEWS = [
     color: 'text-indigo-600',
   },
   {
+    id: 'creative' as TemplateName,
     name: 'Creative',
     desc: 'Gradient accents and modern styles',
     border: 'border-t-4 border-violet-500',
@@ -91,6 +105,7 @@ const TEMPLATE_PREVIEWS = [
     color: 'text-violet-500',
   },
   {
+    id: 'dark' as TemplateName,
     name: 'Dark Mode',
     desc: 'Dark layouts styled for digital tech brands',
     border: 'border border-slate-800',
@@ -100,6 +115,70 @@ const TEMPLATE_PREVIEWS = [
   },
 ];
 
+// Mock Invoice data for template preview
+const mockInvoice = {
+  invoiceNumber: 'INV/2026/042',
+  issueDate: '2026-06-20T12:00:00.000Z',
+  dueDate: '2026-07-20T12:00:00.000Z',
+  currency: 'INR',
+  placeOfSupply: '27',
+  reverseCharge: false,
+  isInterState: false,
+  subTotal: 10000,
+  discountTotal: 1000,
+  taxableAmount: 9000,
+  cgstTotal: 810,
+  sgstTotal: 810,
+  igstTotal: 0,
+  cessTotal: 0,
+  roundOff: 0,
+  grandTotal: 10620,
+  notes: 'Thank you for your business!',
+  terms: 'Please settle this payment within the due date.',
+  business: {
+    name: 'Virbic Studio Ltd',
+    gstin: '27AAAAA1111A1Z1',
+    address: '404 Innovation Hub, Bandra Kurla Complex',
+    city: 'Mumbai',
+    state: 'Maharashtra',
+    pincode: '400051',
+  },
+  client: {
+    name: 'Acme Corporation',
+    gstin: '27BBBBB2222B2Z2',
+    email: 'finance@acme.com',
+    phone: '9988776655',
+    billingAddress: '789 Enterprise Lane',
+    billingCity: 'Pune',
+    billingState: '27',
+    billingPincode: '411001',
+  },
+  lineItems: [
+    {
+      description: 'Software Integration & Consultations',
+      hsnCode: '9983',
+      quantity: 1,
+      unit: 'HRS',
+      rate: 10000,
+      discount: 10,
+      discountType: 'PERCENTAGE' as const,
+      gstRate: 18,
+    },
+  ],
+};
+
+const mockTotals = {
+  subTotal: mockInvoice.subTotal,
+  discountTotal: mockInvoice.discountTotal,
+  taxableAmount: mockInvoice.taxableAmount,
+  cgstTotal: mockInvoice.cgstTotal,
+  sgstTotal: mockInvoice.sgstTotal,
+  igstTotal: mockInvoice.igstTotal,
+  cessTotal: mockInvoice.cessTotal,
+  roundOff: mockInvoice.roundOff,
+  grandTotal: mockInvoice.grandTotal,
+};
+
 export default function LandingPage() {
   const { isSignedIn } = useAuth();
   const getStartedUrl = isSignedIn ? '/dashboard' : '/onboarding';
@@ -107,6 +186,8 @@ export default function LandingPage() {
   const [scrolled, setScrolled] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [activeTestimonial, setActiveTestimonial] = useState(0);
+  const [selectedTemplate, setSelectedTemplate] = useState<TemplateName | null>(null);
+  const [previewTemplate, setPreviewTemplate] = useState<TemplateName>('modern');
 
   // Monitor scroll for header background transform
   useEffect(() => {
@@ -732,8 +813,12 @@ export default function LandingPage() {
               <motion.div
                 key={tmpl.name}
                 whileHover={{ scale: 1.02, y: -4 }}
+                onClick={() => {
+                  setSelectedTemplate(tmpl.id);
+                  setPreviewTemplate(tmpl.id);
+                }}
                 className={cn(
-                  "flex-shrink-0 w-[260px] border rounded-xl p-5 shadow-sm space-y-4",
+                  "flex-shrink-0 w-[260px] border rounded-xl p-5 shadow-sm space-y-4 cursor-pointer transition-colors duration-200 hover:border-emerald-500/50 dark:hover:border-emerald-500/30",
                   tmpl.darkText
                     ? "bg-slate-900 border-slate-800 text-white"
                     : "bg-white dark:bg-slate-900 border-slate-200/60 dark:border-slate-800 text-slate-800 dark:text-slate-100"
@@ -1070,6 +1155,75 @@ export default function LandingPage() {
           <span>Developed by <a href="https://amplivate.in" target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 font-bold underline text-slate-455 hover:text-sky-400 transition-colors"><img src="/amplivate-logo.svg" alt="Amplivate Logo" className="w-3.5 h-3.5 object-contain" /> amplivate.in</a></span>
         </div>
       </footer>
+
+      {/* Template Preview Dialog */}
+      <Dialog open={selectedTemplate !== null} onOpenChange={(open) => !open && setSelectedTemplate(null)}>
+        <DialogContent className="flex flex-col gap-0 p-0 sm:max-w-4xl max-h-[90vh] overflow-hidden bg-slate-50 dark:bg-slate-950 border border-slate-200/80 dark:border-slate-800">
+          <DialogHeader className="p-4 border-b border-slate-200/60 dark:border-slate-800 bg-white dark:bg-slate-900 flex flex-row items-center justify-between gap-4 flex-shrink-0">
+            <div className="space-y-0.5 text-left">
+              <DialogTitle className="text-sm font-black text-slate-850 dark:text-slate-100 uppercase tracking-wider">
+                Live Template Preview
+              </DialogTitle>
+              <p className="text-[10px] text-slate-400 font-bold">
+                Live mockup showing the exact render of the template
+              </p>
+            </div>
+            
+            <div className="flex items-center gap-3 pr-8">
+              <span className="text-xs font-black text-slate-550 dark:text-slate-400 uppercase tracking-widest text-[9px]">Style:</span>
+              <select
+                value={previewTemplate}
+                onChange={(e) => setPreviewTemplate(e.target.value as TemplateName)}
+                className="text-xs bg-slate-550 dark:bg-slate-950 border border-slate-250 dark:border-slate-805 rounded-lg px-3 py-1.5 font-bold outline-none cursor-pointer text-slate-750 dark:text-slate-250 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 transition-all select-none"
+              >
+                {Object.entries(TEMPLATE_META).map(([key, value]) => (
+                  <option key={key} value={key} className="bg-white dark:bg-slate-900 font-medium">
+                    {value.label} — {value.description}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </DialogHeader>
+
+          {/* Scrollable invoice container */}
+          <div className="flex-1 overflow-y-auto p-6 md:p-10 flex justify-center bg-slate-100 dark:bg-slate-950/60 scrollbar-thin">
+            <div className="w-full max-w-[800px] bg-white dark:bg-slate-900 border border-slate-200/60 dark:border-slate-800 rounded-xl shadow-xl overflow-hidden p-6 md:p-8 self-start">
+              <TemplateRenderer
+                template={previewTemplate}
+                invoice={mockInvoice}
+                totals={mockTotals}
+                business={mockInvoice.business}
+                client={mockInvoice.client}
+                settings={DEFAULT_SETTINGS}
+                size="preview"
+              />
+            </div>
+          </div>
+
+          {/* Dialog Footer */}
+          <div className="p-4 border-t border-slate-200/60 dark:border-slate-800 bg-white dark:bg-slate-900 flex items-center justify-between gap-4 flex-shrink-0">
+            <div className="text-left hidden sm:block">
+              <span className="text-xs font-bold text-slate-500 dark:text-slate-400">
+                Ready to create high-end professional invoices?
+              </span>
+            </div>
+            <div className="flex items-center gap-3 w-full sm:w-auto justify-end">
+              <DialogClose render={<Button variant="outline" className="h-9 font-bold px-4 text-xs cursor-pointer" />}>
+                Cancel
+              </DialogClose>
+              <Link
+                href={getStartedUrl}
+                className={cn(
+                  buttonVariants({ variant: 'default' }),
+                  "h-9 font-bold bg-emerald-500 hover:bg-emerald-600 text-white cursor-pointer px-4 text-xs shadow-md shadow-emerald-500/10"
+                )}
+              >
+                Use this Template
+              </Link>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
