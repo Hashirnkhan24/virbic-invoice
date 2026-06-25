@@ -48,6 +48,7 @@ interface InvoiceRow {
   issueDate: string;
   dueDate: string;
   grandTotal: number;
+  amountPaid: number;
   status: string;
   currency: string;
   client: {
@@ -409,15 +410,40 @@ export default function InvoicesPage() {
           <ArrowUpDown className="w-3.5 h-3.5" />
         </button>
       ),
-      className: 'text-right font-bold text-slate-850 dark:text-slate-50',
-      render: (row) => <CurrencyAmount amount={Number(row.grandTotal)} currency={row.currency} />,
+      className: 'text-right font-bold text-slate-855 dark:text-slate-50',
+      render: (row) => {
+        if (row.status === 'PARTIAL') {
+          const pct = Math.min(100, Math.max(0, ((row.amountPaid || 0) / row.grandTotal) * 100));
+          return (
+            <div className="flex flex-col items-end gap-1 select-none">
+              <div className="text-[10px] text-slate-500 font-semibold leading-none">
+                {formatCurrency(Number(row.amountPaid || 0), row.currency)} / <span className="font-bold text-slate-850 dark:text-slate-50">{formatCurrency(Number(row.grandTotal), row.currency)}</span>
+              </div>
+              <div className="w-10 h-1 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
+                <div
+                  className="h-full bg-emerald-500 rounded-full"
+                  style={{ width: `${pct}%` }}
+                />
+              </div>
+            </div>
+          );
+        }
+        return <CurrencyAmount amount={Number(row.grandTotal)} currency={row.currency} />;
+      },
     },
     // Status
     {
       key: 'status',
       header: 'Status',
       className: 'text-center',
-      render: (row) => <StatusBadge status={row.status} />,
+      render: (row) => (
+        <StatusBadge
+          status={row.status}
+          amountPaid={row.amountPaid}
+          grandTotal={row.grandTotal}
+          currency={row.currency}
+        />
+      ),
     },
     // Actions Dropdown
     {

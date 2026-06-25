@@ -21,12 +21,25 @@ import {
   UploadCloud,
   Loader2,
   Info,
+  Globe,
+  Copy,
+  ExternalLink,
+  Lock,
+  Eye,
+  MessageSquare,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Card } from '@/components/ui/card';
 import { Switch } from '@/components/ui/switch';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import {
   Dialog,
   DialogContent,
@@ -36,15 +49,143 @@ import {
 } from '@/components/ui/dialog';
 import { toast } from 'sonner';
 
+import { TEMPLATE_VARIABLES } from '@/lib/reminder-defaults';
 import BusinessForm from '@/components/business/BusinessForm';
 import InvoicePreview from '@/components/invoice-templates/InvoicePreview';
 import { TEMPLATE_META } from '@/components/invoice-templates/TemplateRenderer';
 import { INDIAN_STATES } from '@/lib/constants';
 
+function compileSubjectPreview(subject: string, businessName: string): string {
+  const vars: Record<string, string> = {
+    clientName: "Acme Corporation",
+    invoiceNumber: "INV-2026-042",
+    dueDate: "July 15, 2026",
+    issueDate: "June 15, 2026",
+    grandTotal: "₹25,000.00",
+    amountPaid: "₹5,000.00",
+    outstandingAmount: "₹20,000.00",
+    paymentLink: "https://virbic.com/i/abc123xyz",
+    businessName: businessName || "My Business",
+  };
+
+  let compiledSubject = subject || "";
+  const variableRegex = /\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g;
+  compiledSubject = compiledSubject.replace(variableRegex, (match, key) => {
+    return vars[key] !== undefined ? vars[key] : "";
+  });
+
+  return compiledSubject;
+}
+
+function compileTemplatePreview(template: string, businessName: string): { body: string } {
+  const vars: Record<string, string> = {
+    clientName: "Acme Corporation",
+    invoiceNumber: "INV-2026-042",
+    dueDate: "July 15, 2026",
+    issueDate: "June 15, 2026",
+    grandTotal: "₹25,000.00",
+    amountPaid: "₹5,000.00",
+    outstandingAmount: "₹20,000.00",
+    paymentLink: "https://virbic.com/i/abc123xyz",
+    businessName: businessName || "My Business",
+  };
+
+  let compiledBody = template || "";
+  
+  // 1. Compile conditional blocks: {{#if amountPaid}}...{{/if}}
+  const conditionalRegex = /\{\{#if\s+([a-zA-Z0-9_]+)\s*\}\}([\s\S]*?)\{\{\/if\}\}/g;
+  compiledBody = compiledBody.replace(conditionalRegex, (match, key, content) => {
+    const value = vars[key];
+    if (value && value !== "" && value !== "0") {
+      return content;
+    }
+    return "";
+  });
+
+  // 2. Compile variables: {{variable}}
+  const variableRegex = /\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g;
+  compiledBody = compiledBody.replace(variableRegex, (match, key) => {
+    return vars[key] !== undefined ? vars[key] : "";
+  });
+
+  return {
+    body: compiledBody,
+  };
+}
+
+const STATIC_WA_TEMPLATES = [
+  {
+    name: 'invoice_delivered',
+    label: 'Invoice Delivered',
+    content: `*Invoice from {{businessName}}*\n\nInvoice #: {{invoiceNumber}}\nAmount: *₹{{amount}}*\nDue: {{dueDate}}\n\nView & Pay: {{invoiceLink}}\n\nQuestions? Reply here.`
+  },
+  {
+    name: 'payment_reminder_stage_1',
+    label: 'Payment Reminder (Stage 1 - Polite)',
+    content: `Hi {{clientName}}! 👋\n\nFriendly reminder: Invoice *{{invoiceNumber}}* for *₹{{amount}}* is due on {{dueDate}}.\n\nPay now: {{paymentLink}}\n\nThank you!`
+  },
+  {
+    name: 'payment_reminder_stage_2',
+    label: 'Payment Reminder (Stage 2 - Standard)',
+    content: `Hi {{clientName}},\n\nInvoice *{{invoiceNumber}}* (*₹{{amount}}*) is now due.\n\nPlease process: {{paymentLink}}\n\n— {{businessName}}`
+  },
+  {
+    name: 'payment_reminder_stage_3',
+    label: 'Payment Reminder (Stage 3 - Overdue/Firm)',
+    content: `Hi {{clientName}},\n\nInvoice *{{invoiceNumber}}* for *₹{{amount}}* is *overdue*. Please prioritize.\n\nPay now: {{paymentLink}}\n\n— {{businessName}}`
+  },
+  {
+    name: 'payment_proof_received',
+    label: 'Payment Proof Received',
+    content: `✅ Payment proof received for Invoice *{{invoiceNumber}}*!\n\nAmount: ₹{{amount}}\n\n{{businessName}} will verify shortly. You'll get your receipt once confirmed.\n\nReference: {{proofReference}}`
+  },
+  {
+    name: 'payment_confirmed_receipt',
+    label: 'Payment Confirmed Receipt',
+    content: `*Payment Received! 🎉*\n\nInvoice: {{invoiceNumber}}\nAmount Paid: *₹{{amount}}*\nBalance: *₹0.00* (Fully Paid)\n\nThank you for your business!\n\nDownload receipt: {{receiptLink}}`
+  },
+  {
+    name: 'opt_in_request',
+    label: 'WhatsApp Opt-in Request',
+    content: `Hi {{clientName}}! 👋\n\n{{businessName}} would like to send you invoices and payment updates via WhatsApp.\n\nReply *YES* to receive:\n• Invoice notifications\n• Payment reminders\n• Payment receipts\n• Quick payment links\n\nReply *STOP* to decline.\n\nThis is one-time. Your privacy is respected.`
+  },
+  {
+    name: 'opt_in_confirmed',
+    label: 'WhatsApp Opt-in Confirmed',
+    content: `✅ You're all set! You'll now receive invoices from {{businessName}} via WhatsApp.\n\nReply STOP anytime to unsubscribe.\n\nWhat would you like to do?\n• View latest invoice — reply "invoice"\n• Make payment — reply "pay"`
+  }
+];
+
+function compileWhatsAppTemplatePreview(content: string, businessName: string): string {
+  const vars: Record<string, string> = {
+    businessName: businessName || "My Business",
+    clientName: "Acme Corporation",
+    freelancerName: "John Doe",
+    invoiceNumber: "INV-2026-042",
+    amount: "25,000.00",
+    dueDate: "July 15, 2026",
+    invoiceLink: "https://virbic.com/i/abc123xyz",
+    paymentLink: "https://virbic.com/i/abc123xyz",
+    receiptLink: "https://virbic.com/i/abc123xyz/receipt",
+    proofReference: "UTR123456789"
+  };
+
+  let compiled = content || "";
+  for (const [key, value] of Object.entries(vars)) {
+    const regex = new RegExp(`{{${key}}}`, 'g');
+    compiled = compiled.replace(regex, value);
+  }
+  return compiled;
+}
+
 interface SettingsClientProps {
   user: any;
   subscription: any;
   businesses: any[];
+  initialTemplates?: any[];
+  initialLogs?: any[];
+  initialPreferences?: any;
+  initialClients?: any[];
 }
 
 const TABS = [
@@ -52,6 +193,8 @@ const TABS = [
   { id: 'branding', label: 'Branding & Templates', icon: Palette },
   { id: 'defaults', label: 'Invoice Defaults', icon: Sliders },
   { id: 'notifications', label: 'Notifications', icon: Bell },
+  { id: 'whatsapp', label: 'WhatsApp Messaging', icon: MessageSquare },
+  { id: 'portal', label: 'Client Portal', icon: Globe },
   { id: 'billing', label: 'Billing & Plan', icon: CreditCard },
   { id: 'data', label: 'Data & Export', icon: Database },
 ];
@@ -71,6 +214,10 @@ export default function SettingsClient({
   user: initialUser,
   subscription: initialSubscription,
   businesses: initialBusinesses,
+  initialTemplates = [],
+  initialLogs = [],
+  initialPreferences,
+  initialClients = [],
 }: SettingsClientProps) {
   const router = useRouter();
 
@@ -131,6 +278,368 @@ export default function SettingsClient({
     reminderBodyTemplate: user?.reminderBodyTemplate || '',
   });
   const [isNotifsSaving, setIsNotifsSaving] = useState(false);
+
+  // ── Escalating Reminder States ──
+  const [templates, setTemplates] = useState<any[]>(initialTemplates);
+  const [logs, setLogs] = useState<any[]>(initialLogs);
+  const [selectedStage, setSelectedStage] = useState<number>(1);
+  const [isTemplatesSaving, setIsTemplatesSaving] = useState(false);
+  const [isResettingTemplates, setIsResettingTemplates] = useState(false);
+
+  // ── Payment Confirmation States ──
+  const [preferences, setPreferences] = useState({
+    confirmationChannel: initialPreferences?.confirmationChannel ?? 'both',
+    autoConfirmation: initialPreferences?.autoConfirmation ?? true,
+    includeReceiptPdf: initialPreferences?.includeReceiptPdf ?? true,
+    upiAutoApproveEnabled: initialPreferences?.upiAutoApproveEnabled ?? false,
+    upiAutoApproveHours: initialPreferences?.upiAutoApproveHours ?? 72,
+    whatsAppEnabled: initialPreferences?.whatsAppEnabled ?? false,
+    whatsAppProvider: initialPreferences?.whatsAppProvider ?? 'twilio',
+    twilioAccountSid: initialPreferences?.twilioAccountSid ?? '',
+    twilioAuthToken: initialPreferences?.twilioAuthToken ?? '',
+    twilioWhatsAppNumber: initialPreferences?.twilioWhatsAppNumber ?? '',
+    metaAccessToken: initialPreferences?.metaAccessToken ?? '',
+    metaPhoneNumberId: initialPreferences?.metaPhoneNumberId ?? '',
+  });
+  const [isPreferencesSaving, setIsPreferencesSaving] = useState(false);
+
+  const [testPhone, setTestPhone] = useState(user.phone || '');
+  const [isTestingConnection, setIsTestingConnection] = useState(false);
+  const [selectedWaTemplate, setSelectedWaTemplate] = useState('invoice_delivered');
+
+  // ── Client Portal States ──
+  const [clients, setClients] = useState<any[]>(initialClients);
+  const [portalPrefs, setPortalPrefs] = useState({
+    portalEnabledDefault: initialPreferences?.portalEnabledDefault ?? true,
+    portalAutoCreate: initialPreferences?.portalAutoCreate ?? true,
+    portalPasswordDefault: initialPreferences?.portalPasswordDefault || '',
+    portalUseBusinessBranding: initialPreferences?.portalUseBusinessBranding ?? true,
+    portalBrandColorDefault: initialPreferences?.portalBrandColorDefault || '#10b981',
+    portalTitleDefault: initialPreferences?.portalTitleDefault || '',
+    portalShowPaidDefault: initialPreferences?.portalShowPaidDefault ?? true,
+    portalAllowPdfDefault: initialPreferences?.portalAllowPdfDefault ?? true,
+    portalAllowPaymentDefault: initialPreferences?.portalAllowPaymentDefault ?? true,
+    portalShowHistoryDefault: initialPreferences?.portalShowHistoryDefault ?? true,
+  });
+  const [isPortalPrefsSaving, setIsPortalPrefsSaving] = useState(false);
+  const [previewClientId, setPreviewClientId] = useState<string>(initialClients[0]?.id || '');
+  
+  // Per-Client Editing Modal
+  const [editingPortalClient, setEditingPortalClient] = useState<any | null>(null);
+  const [isEditPortalOpen, setIsEditPortalOpen] = useState(false);
+  const [isSavingPortalClient, setIsSavingPortalClient] = useState(false);
+  const [editPortalForm, setEditPortalForm] = useState({
+    slug: '',
+    password: '',
+    clearPassword: false,
+    brandColor: '#10b981',
+    title: '',
+    enabled: true,
+    showPaidInvoices: true,
+    allowPdfDownload: true,
+    allowPayment: true,
+    showPaymentHistory: true,
+  });
+
+  const activeTemplate = templates.find((t) => t.stage === selectedStage) || {
+    stage: selectedStage,
+    tone: selectedStage === 1 ? "polite" : selectedStage === 2 ? "standard" : selectedStage === 3 ? "firm" : "final",
+    subject: "",
+    body: "",
+    daysAfterDue: selectedStage === 1 ? 3 : selectedStage === 2 ? 7 : selectedStage === 3 ? 14 : 30,
+    daysAfterLast: selectedStage === 1 ? 3 : selectedStage === 2 ? 4 : selectedStage === 3 ? 7 : 10,
+    sendEmail: true,
+    generateWaMsg: true,
+  };
+
+  const handleUpdateActiveTemplate = (fields: Partial<typeof activeTemplate>) => {
+    setTemplates((prev) => {
+      const idx = prev.findIndex((t) => t.stage === selectedStage);
+      if (idx > -1) {
+        const next = [...prev];
+        next[idx] = { ...next[idx], ...fields };
+        return next;
+      } else {
+        return [...prev, { ...activeTemplate, ...fields }];
+      }
+    });
+  };
+
+  const handleSaveReminderTemplates = async () => {
+    setIsTemplatesSaving(true);
+    try {
+      const res = await fetch('/api/settings/reminder-templates', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ templates }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to save templates');
+      
+      setTemplates(data.templates);
+      toast.success('Reminder templates saved successfully!');
+    } catch (err: any) {
+      console.error(err);
+      toast.error(err.message || 'Failed to save templates.');
+    } finally {
+      setIsTemplatesSaving(false);
+    }
+  };
+
+  const handleResetReminderTemplates = async () => {
+    if (!window.confirm("Are you sure you want to reset all templates to default? This will overwrite your custom templates.")) return;
+    setIsResettingTemplates(true);
+    try {
+      const res = await fetch('/api/settings/reminder-templates', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ reset: true }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to reset templates');
+      
+      setTemplates(data.templates);
+      toast.success('Reminder templates reset to defaults!');
+    } catch (err: any) {
+      console.error(err);
+      toast.error(err.message || 'Failed to reset templates.');
+    } finally {
+      setIsResettingTemplates(false);
+    }
+  };
+
+  const handleSavePreferences = async () => {
+    setIsPreferencesSaving(true);
+    try {
+      const res = await fetch('/api/settings/preferences', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(preferences),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to save preferences');
+      
+      setPreferences({
+        confirmationChannel: data.confirmationChannel,
+        autoConfirmation: data.autoConfirmation,
+        includeReceiptPdf: data.includeReceiptPdf,
+        upiAutoApproveEnabled: data.upiAutoApproveEnabled,
+        upiAutoApproveHours: data.upiAutoApproveHours,
+        whatsAppEnabled: data.whatsAppEnabled,
+        whatsAppProvider: data.whatsAppProvider,
+        twilioAccountSid: data.twilioAccountSid || '',
+        twilioAuthToken: data.twilioAuthToken || '',
+        twilioWhatsAppNumber: data.twilioWhatsAppNumber || '',
+        metaAccessToken: data.metaAccessToken || '',
+        metaPhoneNumberId: data.metaPhoneNumberId || '',
+      });
+      toast.success('Preferences saved successfully!');
+    } catch (err: any) {
+      console.error(err);
+      toast.error(err.message || 'Failed to save preferences.');
+    } finally {
+      setIsPreferencesSaving(false);
+    }
+  };
+
+  const handleTestWhatsAppConnection = async () => {
+    if (!testPhone) {
+      toast.error('Please enter a phone number to send the test message to.');
+      return;
+    }
+    setIsTestingConnection(true);
+    try {
+      const res = await fetch('/api/settings/whatsapp/test', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          phone: testPhone,
+          provider: preferences.whatsAppProvider,
+          twilioAccountSid: preferences.twilioAccountSid,
+          twilioAuthToken: preferences.twilioAuthToken,
+          twilioWhatsAppNumber: preferences.twilioWhatsAppNumber,
+          metaAccessToken: preferences.metaAccessToken,
+          metaPhoneNumberId: preferences.metaPhoneNumberId,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to send test message');
+      toast.success(data.message || 'Test message sent successfully!');
+    } catch (err: any) {
+      console.error(err);
+      toast.error(err.message || 'Test connection failed.');
+    } finally {
+      setIsTestingConnection(false);
+    }
+  };
+
+  const handleSavePortalPrefs = async () => {
+    setIsPortalPrefsSaving(true);
+    try {
+      const res = await fetch('/api/settings/preferences', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(portalPrefs),
+      });
+
+      if (!res.ok) {
+        throw new Error('Failed to update portal preferences');
+      }
+
+      toast.success('Client Portal defaults updated successfully!');
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to update preferences');
+    } finally {
+      setIsPortalPrefsSaving(false);
+    }
+  };
+
+  const handleOpenEditPortal = (clientItem: any) => {
+    setEditingPortalClient(clientItem);
+    if (clientItem.portal) {
+      setEditPortalForm({
+        slug: clientItem.portal.slug,
+        password: '',
+        clearPassword: false,
+        brandColor: clientItem.portal.brandColor || '#10b981',
+        title: clientItem.portal.title || '',
+        enabled: clientItem.portal.enabled,
+        showPaidInvoices: clientItem.portal.showPaidInvoices,
+        allowPdfDownload: clientItem.portal.allowPdfDownload,
+        allowPayment: clientItem.portal.allowPayment,
+        showPaymentHistory: clientItem.portal.showPaymentHistory,
+      });
+    } else {
+      setEditPortalForm({
+        slug: clientItem.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, ''),
+        password: '',
+        clearPassword: false,
+        brandColor: activeBusiness?.brandColor || '#10b981',
+        title: `${activeBusiness?.name || 'Client'} Portal`,
+        enabled: true,
+        showPaidInvoices: true,
+        allowPdfDownload: true,
+        allowPayment: true,
+        showPaymentHistory: true,
+      });
+    }
+    setIsEditPortalOpen(true);
+  };
+
+  const handleSaveClientPortal = async () => {
+    if (!editingPortalClient) return;
+    setIsSavingPortalClient(true);
+    try {
+      const isNew = !editingPortalClient.portal;
+      const url = `/api/clients/${editingPortalClient.id}/portal`;
+      const method = isNew ? 'POST' : 'PUT';
+
+      const res = await fetch(url, {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(editPortalForm),
+      });
+
+      if (!res.ok) {
+        const errJson = await res.json();
+        throw new Error(errJson.error || 'Failed to save portal settings');
+      }
+
+      const savedPortal = await res.json();
+      
+      // Update local clients state
+      setClients(prev => prev.map(c => {
+        if (c.id === editingPortalClient.id) {
+          return {
+            ...c,
+            portal: {
+              id: savedPortal.id,
+              slug: savedPortal.slug,
+              enabled: savedPortal.enabled,
+              hasPassword: !!savedPortal.password,
+              brandColor: savedPortal.brandColor,
+              logoUrl: savedPortal.logoUrl,
+              title: savedPortal.title,
+              showPaidInvoices: savedPortal.showPaidInvoices,
+              allowPdfDownload: savedPortal.allowPdfDownload,
+              allowPayment: savedPortal.allowPayment,
+              showPaymentHistory: savedPortal.showPaymentHistory
+            }
+          };
+        }
+        return c;
+      }));
+
+      setIsEditPortalOpen(false);
+      toast.success(isNew ? 'Client Portal created successfully!' : 'Portal settings updated successfully!');
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to save portal');
+    } finally {
+      setIsSavingPortalClient(false);
+    }
+  };
+
+  const handleTogglePortalEnabled = async (clientItem: any) => {
+    if (!clientItem.portal) return;
+    const newEnabledState = !clientItem.portal.enabled;
+    try {
+      const res = await fetch(`/api/clients/${clientItem.id}/portal`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ enabled: newEnabledState }),
+      });
+
+      if (!res.ok) {
+        throw new Error('Failed to toggle portal state');
+      }
+
+      setClients(prev => prev.map(c => {
+        if (c.id === clientItem.id) {
+          return {
+            ...c,
+            portal: {
+              ...c.portal!,
+              enabled: newEnabledState
+            }
+          };
+        }
+        return c;
+      }));
+
+      toast.success(newEnabledState ? 'Portal enabled successfully!' : 'Portal disabled successfully!');
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to update portal state');
+    }
+  };
+
+  // Subject & Body Refs for inserting variables
+  const subjectRef = useRef<HTMLInputElement>(null);
+  const bodyRef = useRef<HTMLTextAreaElement>(null);
+
+  const insertVariable = (field: 'subject' | 'body', varName: string) => {
+    const value = activeTemplate[field] || "";
+    let inputEl: HTMLInputElement | HTMLTextAreaElement | null = null;
+    
+    if (field === 'subject') {
+      inputEl = subjectRef.current;
+    } else {
+      inputEl = bodyRef.current;
+    }
+
+    const selectionStart = inputEl?.selectionStart ?? value.length;
+    const selectionEnd = inputEl?.selectionEnd ?? value.length;
+    const newValue = value.substring(0, selectionStart) + `{{${varName}}}` + value.substring(selectionEnd);
+    handleUpdateActiveTemplate({ [field]: newValue });
+    
+    setTimeout(() => {
+      if (inputEl) {
+        inputEl.focus();
+        const newCursorPos = selectionStart + varName.length + 4;
+        inputEl.setSelectionRange(newCursorPos, newCursorPos);
+      }
+    }, 50);
+  };
+
 
   // ── Import Local States ──
   const [clientsImportFile, setClientsImportFile] = useState<File | null>(null);
@@ -1101,219 +1610,1213 @@ export default function SettingsClient({
 
               {/* ── TAB: NOTIFICATIONS ── */}
               {activeTab === 'notifications' && (
-                <div className="max-w-xl space-y-6">
-                  <div>
-                    <h2 className="text-base font-extrabold text-slate-850 dark:text-slate-100">
-                      Notifications & Reminders
-                    </h2>
-                    <p className="text-[11px] text-slate-455">
-                      Toggle system confirmation emails and configure automated payment reminder intervals.
-                    </p>
+                <div className="space-y-8">
+                  <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-3 border-b border-slate-100 dark:border-slate-850">
+                    <div>
+                      <h2 className="text-base font-extrabold text-slate-850 dark:text-slate-100">
+                        Notifications & Reminders Settings
+                      </h2>
+                      <p className="text-[11px] text-slate-455">
+                        Toggle system email alerts and customize the 4-stage escalating payment reminder system.
+                      </p>
+                    </div>
+                    <div className="flex gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={handleResetReminderTemplates}
+                        disabled={isResettingTemplates}
+                        className="text-xs font-bold border-slate-205 text-slate-700 dark:text-slate-300 dark:border-slate-800 cursor-pointer"
+                      >
+                        {isResettingTemplates ? 'Resetting...' : 'Reset to Defaults'}
+                      </Button>
+                      <Button
+                        size="sm"
+                        onClick={handleSaveReminderTemplates}
+                        disabled={isTemplatesSaving}
+                        className="bg-emerald-500 hover:bg-emerald-600 text-white text-xs font-bold cursor-pointer"
+                      >
+                        {isTemplatesSaving ? 'Saving...' : 'Save Escalation Rules'}
+                      </Button>
+                    </div>
                   </div>
 
-                  <div className="space-y-4">
-                    {/* Toggles */}
-                    <div className="space-y-3 pb-4 border-b border-slate-100 dark:border-slate-850">
-                      <h3 className="text-xs font-black text-slate-800 dark:text-slate-200 uppercase tracking-wider">
-                        Email Notifications
-                      </h3>
-
-                      <div className="flex justify-between items-center py-1">
+                  {/* General Email Notification Switches */}
+                  <div className="space-y-4 max-w-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-5 rounded-2xl">
+                    <h3 className="text-xs font-black text-slate-850 dark:text-slate-200 uppercase tracking-wider">
+                      General Email Alerts
+                    </h3>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="flex items-center justify-between p-3 bg-slate-50 dark:bg-slate-950/40 rounded-xl border border-slate-100 dark:border-slate-850">
                         <div>
-                          <p className="text-xs font-bold text-slate-700 dark:text-slate-300">
-                            Invoice dispatched confirmation
-                          </p>
-                          <p className="text-[10px] text-slate-500">
-                            Receive a confirmation copy when sending an invoice to client.
-                          </p>
+                          <p className="text-xs font-bold text-slate-700 dark:text-slate-355">Invoice Sent Copy</p>
+                          <p className="text-[10px] text-slate-400">Receive a copy when invoice is sent</p>
                         </div>
                         <Switch
                           checked={notifs.emailInvoiceSent}
-                          onCheckedChange={(checked) =>
-                            setNotifs((prev) => ({ ...prev, emailInvoiceSent: checked }))
-                          }
+                          onCheckedChange={(checked) => setNotifs(p => ({ ...p, emailInvoiceSent: checked }))}
                         />
                       </div>
-
-                      <div className="flex justify-between items-center py-1">
+                      <div className="flex items-center justify-between p-3 bg-slate-50 dark:bg-slate-950/40 rounded-xl border border-slate-100 dark:border-slate-850">
                         <div>
-                          <p className="text-xs font-bold text-slate-700 dark:text-slate-300">
-                            Payment collected alerts
-                          </p>
-                          <p className="text-[10px] text-slate-500">
-                            Get notified instantly when clients settle invoices.
-                          </p>
+                          <p className="text-xs font-bold text-slate-700 dark:text-slate-355">Payment Settled Alert</p>
+                          <p className="text-[10px] text-slate-400">Get notified when a client pays</p>
                         </div>
                         <Switch
                           checked={notifs.emailPaymentReceived}
-                          onCheckedChange={(checked) =>
-                            setNotifs((prev) => ({ ...prev, emailPaymentReceived: checked }))
-                          }
+                          onCheckedChange={(checked) => setNotifs(p => ({ ...p, emailPaymentReceived: checked }))}
                         />
                       </div>
-
-                      <div className="flex justify-between items-center py-1">
+                      <div className="flex items-center justify-between p-3 bg-slate-50 dark:bg-slate-950/40 rounded-xl border border-slate-100 dark:border-slate-850">
                         <div>
-                          <p className="text-xs font-bold text-slate-700 dark:text-slate-300">
-                            Overdue status notifications
-                          </p>
-                          <p className="text-[10px] text-slate-500">
-                            Get alerted immediately when an invoice remains outstanding past due date.
-                          </p>
+                          <p className="text-xs font-bold text-slate-700 dark:text-slate-355">Overdue Alerts</p>
+                          <p className="text-[10px] text-slate-400">Alerted when invoice goes overdue</p>
                         </div>
                         <Switch
                           checked={notifs.emailInvoiceOverdue}
-                          onCheckedChange={(checked) =>
-                            setNotifs((prev) => ({ ...prev, emailInvoiceOverdue: checked }))
-                          }
+                          onCheckedChange={(checked) => setNotifs(p => ({ ...p, emailInvoiceOverdue: checked }))}
                         />
                       </div>
-
-                      <div className="flex justify-between items-center py-1">
+                      <div className="flex items-center justify-between p-3 bg-slate-50 dark:bg-slate-955/40 rounded-xl border border-slate-100 dark:border-slate-850">
                         <div>
-                          <p className="text-xs font-bold text-slate-700 dark:text-slate-300">
-                            Weekly financial digest
-                          </p>
-                          <p className="text-[10px] text-slate-500">
-                            Receive a summarized email of weekly billing metrics and active outstanding balances.
-                          </p>
+                          <p className="text-xs font-bold text-slate-700 dark:text-slate-355">Weekly Summary Digest</p>
+                          <p className="text-[10px] text-slate-400">Get weekly invoicing stats digest</p>
                         </div>
                         <Switch
                           checked={notifs.emailWeeklySummary}
-                          onCheckedChange={(checked) =>
-                            setNotifs((prev) => ({ ...prev, emailWeeklySummary: checked }))
-                          }
+                          onCheckedChange={(checked) => setNotifs(p => ({ ...p, emailWeeklySummary: checked }))}
                         />
                       </div>
                     </div>
+                  </div>
 
-                    {/* Reminders section */}
-                    <div className="space-y-4 pt-1">
-                      <div className="flex justify-between items-center">
+                  {/* Payment Confirmation Preferences */}
+                  <div className="space-y-6 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-5 rounded-2xl">
+                    <div className="flex justify-between items-start gap-4 pb-4 border-b border-slate-100 dark:border-slate-850">
+                      <div>
+                        <h3 className="text-xs font-black text-slate-850 dark:text-slate-200 uppercase tracking-wider">
+                          Payment Confirmation Messages
+                        </h3>
+                        <p className="text-[10px] text-slate-505 mt-0.5">
+                          Configure auto-send confirmation updates and digital receipts to clients once they clear a payment.
+                        </p>
+                      </div>
+                      <div className="flex gap-2">
+                        <Button
+                          size="sm"
+                          onClick={handleSavePreferences}
+                          disabled={isPreferencesSaving}
+                          className="bg-emerald-500 hover:bg-emerald-600 text-white text-xs font-bold cursor-pointer"
+                        >
+                          {isPreferencesSaving ? 'Saving...' : 'Save Preferences'}
+                        </Button>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                      {/* Left: Options */}
+                      <div className="space-y-5">
+                        <div className="flex items-center justify-between p-3.5 bg-slate-50 dark:bg-slate-950/40 rounded-xl border border-slate-100 dark:border-slate-850">
+                          <div>
+                            <p className="text-xs font-bold text-slate-700 dark:text-slate-300">Auto-send Confirmation</p>
+                            <p className="text-[10px] text-slate-400">Trigger immediately upon recording a payment</p>
+                          </div>
+                          <Switch
+                            checked={preferences.autoConfirmation}
+                            onCheckedChange={(checked) => setPreferences(p => ({ ...p, autoConfirmation: checked }))}
+                          />
+                        </div>
+
+                        {preferences.autoConfirmation && (
+                          <>
+                            <div className="space-y-2 p-3.5 bg-slate-50 dark:bg-slate-950/40 rounded-xl border border-slate-100 dark:border-slate-850">
+                              <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-350">
+                                Delivery Channel
+                              </label>
+                              <div className="grid grid-cols-3 gap-2 pt-1">
+                                {['whatsapp', 'email', 'both'].map((channel) => (
+                                  <button
+                                    key={channel}
+                                    type="button"
+                                    onClick={() => setPreferences(p => ({ ...p, confirmationChannel: channel }))}
+                                    className={`px-3 py-2 text-[10px] font-extrabold capitalize rounded-lg border transition-all ${
+                                      preferences.confirmationChannel === channel
+                                        ? 'bg-emerald-50 border-emerald-300 text-emerald-700 dark:bg-emerald-950/20 dark:border-emerald-800 dark:text-emerald-455'
+                                        : 'bg-white border-slate-205 text-slate-600 dark:bg-slate-900 dark:border-slate-800 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-850'
+                                    }`}
+                                  >
+                                    {channel}
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+
+                            <div className="flex items-center justify-between p-3.5 bg-slate-50 dark:bg-slate-950/40 rounded-xl border border-slate-100 dark:border-slate-850">
+                              <div>
+                                <p className="text-xs font-bold text-slate-700 dark:text-slate-300">Include Receipt PDF</p>
+                                <p className="text-[10px] text-slate-400">Attach dynamic PDF receipt in emails</p>
+                              </div>
+                              <Switch
+                                checked={preferences.includeReceiptPdf}
+                                onCheckedChange={(checked) => setPreferences(p => ({ ...p, includeReceiptPdf: checked }))}
+                                disabled={preferences.confirmationChannel === 'whatsapp'}
+                              />
+                            </div>
+
+                            <div className="flex items-center justify-between p-3.5 bg-slate-50 dark:bg-slate-950/40 rounded-xl border border-slate-100 dark:border-slate-850">
+                              <div>
+                                <p className="text-xs font-bold text-slate-700 dark:text-slate-300">UPI Auto-Approval</p>
+                                <p className="text-[10px] text-slate-400">Auto-approve client payment proofs after set duration</p>
+                              </div>
+                              <Switch
+                                checked={preferences.upiAutoApproveEnabled}
+                                onCheckedChange={(checked) => setPreferences(p => ({ ...p, upiAutoApproveEnabled: checked }))}
+                              />
+                            </div>
+
+                            {preferences.upiAutoApproveEnabled && (
+                              <div className="space-y-2 p-3.5 bg-slate-50 dark:bg-slate-950/40 rounded-xl border border-slate-100 dark:border-slate-850 text-left">
+                                <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-350">
+                                  Auto-Approval Verification Window (Hours)
+                                </label>
+                                <Select 
+                                  value={preferences.upiAutoApproveHours.toString()} 
+                                  onValueChange={(val) => setPreferences(p => ({ ...p, upiAutoApproveHours: parseInt(val) }))}
+                                >
+                                  <SelectTrigger className="h-9 w-full text-xs font-bold border-slate-250 dark:border-slate-800 bg-white dark:bg-slate-900">
+                                    <SelectValue placeholder="Select hours..." />
+                                  </SelectTrigger>
+                                  <SelectContent className="bg-white dark:bg-slate-900 border dark:border-slate-800">
+                                    <SelectItem value="12" className="text-xs font-semibold">12 Hours</SelectItem>
+                                    <SelectItem value="24" className="text-xs font-semibold">24 Hours (1 Day)</SelectItem>
+                                    <SelectItem value="48" className="text-xs font-semibold">48 Hours (2 Days)</SelectItem>
+                                    <SelectItem value="72" className="text-xs font-semibold">72 Hours (3 Days)</SelectItem>
+                                    <SelectItem value="168" className="text-xs font-semibold">168 Hours (7 Days)</SelectItem>
+                                  </SelectContent>
+                                </Select>
+                              </div>
+                            )}
+                          </>
+                        )}
+                      </div>
+
+                      {/* Right: Mock Preview */}
+                      <div className="space-y-4">
+                        <label className="block text-[10px] font-black text-slate-400 uppercase tracking-wider">
+                          Real-time Mock Preview
+                        </label>
+                        
+                        {(preferences.confirmationChannel === 'whatsapp' || preferences.confirmationChannel === 'both') && preferences.autoConfirmation ? (
+                          <div className="border border-slate-200 dark:border-slate-850 rounded-xl p-4 bg-emerald-50/30 dark:bg-emerald-950/5 relative overflow-hidden">
+                            <span className="absolute top-2 right-3 text-[9px] font-extrabold text-emerald-600 dark:text-emerald-500 uppercase tracking-wider flex items-center gap-1">
+                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" /> WhatsApp Preview
+                            </span>
+                            <div className="space-y-2 mt-2">
+                              <div className="bg-white dark:bg-slate-900 rounded-lg p-3 shadow-sm border border-emerald-100 dark:border-emerald-950 max-w-[85%] text-xs text-slate-700 dark:text-slate-300 leading-relaxed font-sans relative">
+                                <p className="font-semibold text-emerald-600 dark:text-emerald-455 mb-1">Virbic Assistant</p>
+                                <p className="whitespace-pre-line">
+                                  Hello Acme Corp,{"\n"}{"\n"}
+                                  We have received your payment of *INR 50,000.00* for Invoice *#INV-001*. Thank you for your business!{"\n"}{"\n"}
+                                  Your invoice is now fully paid.{"\n"}{"\n"}
+                                  Best regards,{"\n"}
+                                  *{activeBusiness?.name || 'Your Company'}*
+                                </p>
+                                <span className="block text-[9px] text-slate-400 text-right mt-1.5">12:00 PM ✓✓</span>
+                              </div>
+                            </div>
+                          </div>
+                        ) : null}
+
+                        {(preferences.confirmationChannel === 'email' || preferences.confirmationChannel === 'both') && preferences.autoConfirmation ? (
+                          <div className="border border-slate-200 dark:border-slate-850 rounded-xl p-4 bg-slate-50 dark:bg-slate-950/20 relative overflow-hidden">
+                            <span className="absolute top-2 right-3 text-[9px] font-extrabold text-slate-550 uppercase tracking-wider">
+                              Email Receipt Preview
+                            </span>
+                            <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden text-xs max-w-md mx-auto mt-4 font-sans text-slate-700 dark:text-slate-300">
+                              <div className="bg-gradient-to-br from-emerald-500 to-emerald-600 p-4 text-center text-white">
+                                <p className="font-bold text-sm">Payment Confirmation</p>
+                                <p className="text-[10px] opacity-90">Receipt #RCT-INV-001</p>
+                              </div>
+                              <div className="p-4 space-y-3">
+                                <p className="font-bold">Hello Acme Corp,</p>
+                                <p className="text-slate-500 dark:text-slate-400 leading-normal">
+                                  We have successfully processed your payment of <strong>INR 50,000.00</strong>. Your invoice is now fully paid. Thank you!
+                                </p>
+                                <div className="bg-slate-50 dark:bg-slate-950 p-3 rounded-lg border border-slate-100 dark:border-slate-850">
+                                  <div className="flex justify-between py-1 text-slate-500 dark:text-slate-400">
+                                    <span className="text-slate-400 dark:text-slate-500">Invoice Ref:</span>
+                                    <span className="font-semibold text-slate-750 dark:text-slate-250">#INV-001</span>
+                                  </div>
+                                  <div className="flex justify-between py-1 text-slate-500 dark:text-slate-400">
+                                    <span className="text-slate-400 dark:text-slate-500">Payment Date:</span>
+                                    <span className="font-semibold text-slate-750 dark:text-slate-250">{new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>
+                                  </div>
+                                  <div className="flex justify-between py-1 text-slate-500 dark:text-slate-400 border-t border-dashed border-slate-200 dark:border-slate-800 mt-1.5 pt-1.5">
+                                    <span className="font-bold text-slate-800 dark:text-slate-200">Amount Paid:</span>
+                                    <span className="font-bold text-emerald-600 dark:text-emerald-450">INR 50,000.00</span>
+                                  </div>
+                                </div>
+                                {preferences.includeReceiptPdf && (
+                                  <div className="p-2 border border-dashed border-slate-200 dark:border-slate-800 rounded-lg flex items-center gap-2 text-[10px] text-slate-500 bg-slate-50/50 dark:bg-slate-950/20">
+                                    <span className="text-emerald-500 font-bold">PDF</span>
+                                    <span>Receipt_INV-001.pdf (Attachment)</span>
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        ) : null}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Automated Reminders Escalation Section */}
+                  <div className="space-y-6 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-880 p-5 rounded-2xl">
+                    <div className="flex justify-between items-start gap-4">
+                      <div>
+                        <h3 className="text-xs font-black text-slate-855 dark:text-slate-200 uppercase tracking-wider">
+                          Automated Reminders Escalation (4-Stages)
+                        </h3>
+                        <p className="text-[10px] text-slate-500 mt-0.5">
+                          Automate reminder delivery sequences for outstanding client accounts.
+                        </p>
+                      </div>
+                      <Switch
+                        checked={notifs.reminderOverdueEnabled}
+                        onCheckedChange={(checked) =>
+                          setNotifs((prev) => ({ ...prev, reminderOverdueEnabled: checked }))
+                        }
+                      />
+                    </div>
+
+                    {notifs.reminderOverdueEnabled && (
+                      <div className="space-y-6 pt-2">
+                        {/* VISUAL TIMELINE */}
+                        <div className="p-4 bg-slate-50 dark:bg-slate-950/40 rounded-xl border border-slate-100 dark:border-slate-850/80">
+                          <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-4">
+                            Escalation Timeline Sequence
+                          </label>
+                          <div className="relative flex items-center justify-between px-4">
+                            {/* Horizontal progress bar background */}
+                            <div className="absolute left-0 right-0 top-1/2 h-0.5 bg-slate-200 dark:bg-slate-800 -translate-y-1/2 z-0" />
+                            
+                            {/* Interactive timeline nodes */}
+                            {[1, 2, 3, 4].map((stageNum) => {
+                              const t = templates.find(temp => temp.stage === stageNum) || {
+                                stage: stageNum,
+                                tone: stageNum === 1 ? "polite" : stageNum === 2 ? "standard" : stageNum === 3 ? "firm" : "final",
+                                daysAfterDue: stageNum === 1 ? 3 : stageNum === 2 ? 7 : stageNum === 3 ? 14 : 30,
+                                sendEmail: true,
+                                generateWaMsg: true,
+                              };
+                              const isSelected = selectedStage === stageNum;
+                              
+                              // Color scheme based on stage number
+                              const colors = {
+                                1: { border: "border-emerald-500", bg: "bg-emerald-500", text: "text-emerald-600 dark:text-emerald-400", light: "bg-emerald-50 dark:bg-emerald-950/30" },
+                                2: { border: "border-amber-500", bg: "bg-amber-500", text: "text-amber-600 dark:text-amber-400", light: "bg-amber-50 dark:bg-amber-955/30" },
+                                3: { border: "border-orange-500", bg: "bg-orange-500", text: "text-orange-600 dark:text-orange-400", light: "bg-orange-50 dark:bg-orange-955/30" },
+                                4: { border: "border-red-500", bg: "bg-red-500", text: "text-red-600 dark:text-red-400", light: "bg-red-50 dark:bg-red-950/30" },
+                              }[stageNum as 1 | 2 | 3 | 4];
+
+                              return (
+                                <button
+                                  key={stageNum}
+                                  type="button"
+                                  onClick={() => setSelectedStage(stageNum)}
+                                  className={`relative z-10 flex flex-col items-center group cursor-pointer`}
+                                >
+                                  {/* Circular node indicator */}
+                                  <div
+                                    className={`w-8 h-8 rounded-full border-2 flex items-center justify-center font-bold text-xs transition-all ${
+                                      isSelected
+                                        ? `${colors.bg} border-slate-900 text-white dark:border-white scale-110 shadow-md`
+                                        : `${colors.light} ${colors.border} ${colors.text} hover:scale-105`
+                                    }`}
+                                  >
+                                    {stageNum}
+                                  </div>
+                                  
+                                  {/* Node label */}
+                                  <span className="text-[10px] font-black uppercase mt-1.5 text-slate-800 dark:text-slate-200">
+                                    {t.tone}
+                                  </span>
+                                  
+                                  {/* Extra metadata timing / channels */}
+                                  <span className="text-[9px] text-slate-450 mt-0.5">
+                                    +{t.daysAfterDue}d
+                                  </span>
+
+                                  {/* Channels badge */}
+                                  <div className="flex gap-1 mt-1">
+                                    {t.sendEmail && <span className="w-1.5 h-1.5 rounded-full bg-blue-500" title="Email Active" />}
+                                    {t.generateWaMsg && <span className="w-1.5 h-1.5 rounded-full bg-green-500" title="WhatsApp Active" />}
+                                  </div>
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+
+                        {/* 2-COLUMN ACTIVE STAGE EDITOR & PREVIEW */}
+                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                          {/* Form Editor */}
+                          <div className="space-y-4">
+                            <div className="p-4 border border-slate-100 dark:border-slate-850 rounded-xl space-y-4 bg-slate-50/30 dark:bg-slate-900/10">
+                              <h4 className="text-xs font-extrabold text-slate-850 dark:text-slate-200 flex items-center gap-1.5">
+                                <span className={`w-2.5 h-2.5 rounded-full ${
+                                  selectedStage === 1 ? "bg-emerald-500" : selectedStage === 2 ? "bg-amber-500" : selectedStage === 3 ? "bg-orange-500" : "bg-red-500"
+                                }`} />
+                                Stage {selectedStage} Settings ({activeTemplate.tone.toUpperCase()} Tone)
+                              </h4>
+
+                              {/* Timing intervals */}
+                              <div className="grid grid-cols-2 gap-3">
+                                <div className="space-y-1">
+                                  <label className="block text-[10px] font-bold text-slate-450 uppercase tracking-wide">
+                                    Days Overdue to Trigger
+                                  </label>
+                                  <Input
+                                    type="number"
+                                    min="0"
+                                    value={activeTemplate.daysAfterDue}
+                                    onChange={(e) => handleUpdateActiveTemplate({ daysAfterDue: Number(e.target.value) })}
+                                    className="h-9 text-xs border-slate-250 dark:border-slate-800 bg-white dark:bg-slate-950 font-bold"
+                                  />
+                                </div>
+                                <div className="space-y-1">
+                                  <label className="block text-[10px] font-bold text-slate-450 uppercase tracking-wide">
+                                    Min Days Since Last
+                                  </label>
+                                  <Input
+                                    type="number"
+                                    min="1"
+                                    value={activeTemplate.daysAfterLast}
+                                    onChange={(e) => handleUpdateActiveTemplate({ daysAfterLast: Number(e.target.value) })}
+                                    className="h-9 text-xs border-slate-250 dark:border-slate-800 bg-white dark:bg-slate-950 font-bold"
+                                  />
+                                </div>
+                              </div>
+
+                              {/* Channels */}
+                              <div className="flex flex-wrap gap-4 pt-1">
+                                <div className="flex items-center gap-2">
+                                  <Switch
+                                    id="stage-email-toggle"
+                                    checked={activeTemplate.sendEmail}
+                                    onCheckedChange={(checked) => handleUpdateActiveTemplate({ sendEmail: checked })}
+                                  />
+                                  <label htmlFor="stage-email-toggle" className="text-xs font-bold text-slate-700 dark:text-slate-300 cursor-pointer">
+                                    Send Email
+                                  </label>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                  <Switch
+                                    id="stage-wa-toggle"
+                                    checked={activeTemplate.generateWaMsg}
+                                    onCheckedChange={(checked) => handleUpdateActiveTemplate({ generateWaMsg: checked })}
+                                  />
+                                  <label htmlFor="stage-wa-toggle" className="text-xs font-bold text-slate-700 dark:text-slate-300 cursor-pointer">
+                                    Send WhatsApp
+                                  </label>
+                                </div>
+                              </div>
+
+                              {/* Tone selection */}
+                              <div className="space-y-1">
+                                <label className="block text-[10px] font-bold text-slate-450 uppercase tracking-wide">
+                                  Tone Tone
+                                </label>
+                                <select
+                                  value={activeTemplate.tone}
+                                  onChange={(e) => handleUpdateActiveTemplate({ tone: e.target.value })}
+                                  className="w-full h-9 px-3 rounded-lg border border-slate-250 dark:border-slate-800 bg-white dark:bg-slate-950 text-xs font-semibold"
+                                >
+                                  <option value="polite">Polite</option>
+                                  <option value="standard">Standard</option>
+                                  <option value="firm">Firm</option>
+                                  <option value="final">Final Notice</option>
+                                </select>
+                              </div>
+
+                              {/* Subject */}
+                              <div className="space-y-1">
+                                <div className="flex justify-between items-center">
+                                  <label className="block text-[10px] font-bold text-slate-450 uppercase tracking-wide">
+                                    Email Subject Template
+                                  </label>
+                                  {/* Variable Picker for Subject */}
+                                  <select
+                                    onChange={(e) => {
+                                      if (e.target.value) {
+                                        insertVariable('subject', e.target.value);
+                                        e.target.value = "";
+                                      }
+                                    }}
+                                    className="text-[9px] font-bold text-emerald-600 dark:text-emerald-450 border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 rounded px-1 cursor-pointer focus:outline-none"
+                                    value=""
+                                  >
+                                    <option value="" disabled>Insert Variable...</option>
+                                    {TEMPLATE_VARIABLES.map(v => (
+                                      <option key={v.name} value={v.name}>
+                                        {`{{${v.name}}}`}
+                                      </option>
+                                    ))}
+                                  </select>
+                                </div>
+                                <Input
+                                  ref={subjectRef}
+                                  type="text"
+                                  value={activeTemplate.subject}
+                                  onChange={(e) => handleUpdateActiveTemplate({ subject: e.target.value })}
+                                  className="h-9 text-xs border-slate-250 dark:border-slate-800 bg-white dark:bg-slate-950 font-medium text-slate-800 dark:text-slate-250"
+                                  placeholder="e.g. Friendly Reminder: Invoice {{invoiceNumber}}"
+                                />
+                              </div>
+
+                              {/* Body */}
+                              <div className="space-y-1">
+                                <div className="flex justify-between items-center">
+                                  <label className="block text-[10px] font-bold text-slate-450 uppercase tracking-wide">
+                                    Message Body Template
+                                  </label>
+                                  {/* Variable Picker for Body */}
+                                  <select
+                                    onChange={(e) => {
+                                      if (e.target.value) {
+                                        insertVariable('body', e.target.value);
+                                        e.target.value = "";
+                                      }
+                                    }}
+                                    className="text-[9px] font-bold text-emerald-600 dark:text-emerald-450 border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 rounded px-1 cursor-pointer focus:outline-none"
+                                    value=""
+                                  >
+                                    <option value="" disabled>Insert Variable...</option>
+                                    {TEMPLATE_VARIABLES.map(v => (
+                                      <option key={v.name} value={v.name}>
+                                        {`{{${v.name}}}`}
+                                      </option>
+                                    ))}
+                                  </select>
+                                </div>
+                                <Textarea
+                                  ref={bodyRef}
+                                  rows={8}
+                                  value={activeTemplate.body}
+                                  onChange={(e) => handleUpdateActiveTemplate({ body: e.target.value })}
+                                  className="text-xs border-slate-250 dark:border-slate-800 bg-white dark:bg-slate-950 font-medium text-slate-800 dark:text-slate-200"
+                                  placeholder="Use template variables like {{clientName}}, {{grandTotal}}, etc."
+                                />
+                                <div className="flex flex-wrap gap-1 mt-1 text-[9px] text-slate-450">
+                                  <span className="font-semibold mr-1">Insert block:</span>
+                                  <button
+                                    type="button"
+                                    onClick={() => insertVariable('body', '#if amountPaid}}\nYou paid {{amountPaid}}, outstanding: {{outstandingAmount}}.\n{{/if')}
+                                    className="px-1.5 py-0.5 rounded border border-slate-200 dark:border-slate-800 hover:bg-slate-105 dark:hover:bg-slate-950 hover:text-slate-850 dark:hover:text-slate-200 cursor-pointer"
+                                  >
+                                    {"{{#if amountPaid}}...{{/if}}"}
+                                  </button>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Live Preview Panel */}
+                          <div className="space-y-2">
+                            <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest text-center lg:text-left">
+                              Compiled Real-Time Live Preview
+                            </label>
+                            
+                            <div className="border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden shadow-md bg-white dark:bg-slate-950 text-slate-800 dark:text-slate-100 min-h-[300px] flex flex-col">
+                              {/* Preview Header */}
+                              <div className="p-3 border-b border-slate-100 dark:border-slate-850 bg-slate-50/50 dark:bg-slate-900/20 text-xs font-bold text-slate-500 flex flex-col gap-1">
+                                <div>
+                                  <span className="text-slate-400 font-semibold">Subject: </span>
+                                  <span className="text-slate-800 dark:text-slate-200">
+                                    {compileSubjectPreview(activeTemplate.subject, activeBusiness?.name)}
+                                  </span>
+                                </div>
+                                <div className="text-[10px] text-slate-400 font-semibold">
+                                  To: <span className="text-slate-500">finance@clientcorp.com</span> (Email) / <span className="text-slate-500">+91 98765 43210</span> (WhatsApp)
+                                </div>
+                              </div>
+                              
+                              {/* Preview Body */}
+                              <div className="p-4 text-xs font-mono whitespace-pre-wrap flex-1 overflow-y-auto leading-relaxed text-slate-700 dark:text-slate-300">
+                                {compileTemplatePreview(activeTemplate.body, activeBusiness?.name).body}
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* REMINDER AUDIT LOGS TABLE */}
+                  <div className="space-y-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-5 rounded-2xl">
+                    <div>
+                      <h3 className="text-xs font-black text-slate-855 dark:text-slate-200 uppercase tracking-wider">
+                        Recent Reminder History (Audit Logs)
+                      </h3>
+                      <p className="text-[10px] text-slate-500 mt-0.5">
+                        Audit records of the last 50 sent email and WhatsApp payment reminder actions.
+                      </p>
+                    </div>
+
+                    <div className="border border-slate-100 dark:border-slate-850/80 rounded-xl overflow-hidden max-h-[350px] overflow-y-auto">
+                      <table className="w-full text-left border-collapse text-xs">
+                        <thead>
+                          <tr className="bg-slate-50 dark:bg-slate-950/40 text-slate-450 font-bold border-b border-slate-100 dark:border-slate-850/80">
+                            <th className="p-3 text-[10px] uppercase">Sent Date</th>
+                            <th className="p-3 text-[10px] uppercase">Client</th>
+                            <th className="p-3 text-[10px] uppercase">Invoice</th>
+                            <th className="p-3 text-[10px] uppercase">Escalation</th>
+                            <th className="p-3 text-[10px] uppercase">Channel</th>
+                            <th className="p-3 text-[10px] uppercase">Recipient</th>
+                            <th className="p-3 text-[10px] uppercase">Status</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100 dark:divide-slate-850/80">
+                          {logs.length === 0 ? (
+                            <tr>
+                              <td colSpan={7} className="p-6 text-center text-slate-400 font-medium">
+                                No reminders sent yet. Logs will appear here when reminders are dispatched.
+                              </td>
+                            </tr>
+                          ) : (
+                            logs.map((log) => (
+                              <tr key={log.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-900/30">
+                                <td className="p-3 font-medium text-slate-500 whitespace-nowrap">
+                                  {new Date(log.createdAt).toLocaleString()}
+                                </td>
+                                <td className="p-3 font-bold text-slate-800 dark:text-slate-200">
+                                  {log.client?.name || log.clientId || 'Unknown'}
+                                </td>
+                                <td className="p-3 font-mono font-bold text-emerald-600 dark:text-emerald-450">
+                                  {log.invoice?.invoiceNumber || 'N/A'}
+                                </td>
+                                <td className="p-3 whitespace-nowrap">
+                                  <span className={`text-[10px] font-extrabold uppercase px-1.5 py-0.5 rounded ${
+                                    log.stage === 1 ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600' :
+                                    log.stage === 2 ? 'bg-amber-50 dark:bg-amber-955/40 text-amber-600' :
+                                    log.stage === 3 ? 'bg-orange-50 dark:bg-orange-950/40 text-orange-600' :
+                                    'bg-red-50 dark:bg-red-950/40 text-red-600'
+                                  }`}>
+                                    Stage {log.stage} ({log.tone})
+                                  </span>
+                                </td>
+                                <td className="p-3 font-semibold uppercase text-[10px] text-slate-600 dark:text-slate-400 whitespace-nowrap">
+                                  {log.channel}
+                                </td>
+                                <td className="p-3 font-mono text-slate-500 truncate max-w-[150px]">
+                                  {log.recipient}
+                                </td>
+                                <td className="p-3 whitespace-nowrap">
+                                  <span className={`text-[10px] font-black px-1.5 py-0.5 rounded-full ${
+                                    log.status === 'success' || log.status === 'sent'
+                                      ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-400'
+                                      : 'bg-red-100 text-red-800 dark:bg-red-950 dark:text-red-400'
+                                  }`}>
+                                    {log.status}
+                                  </span>
+                                </td>
+                              </tr>
+                            ))
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* ── TAB: WHATSAPP MESSAGING ── */}
+              {activeTab === 'whatsapp' && (
+                <div className="space-y-8 max-w-4xl">
+                  <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-3 border-b border-slate-100 dark:border-slate-850">
+                    <div>
+                      <h2 className="text-base font-extrabold text-slate-850 dark:text-slate-100 flex items-center gap-2">
+                        <MessageSquare className="w-5 h-5 text-emerald-650" />
+                        <span>WhatsApp Communication Settings</span>
+                      </h2>
+                      <p className="text-[11px] text-slate-455">
+                        Enable WhatsApp for delivering invoices, reminders, and payment receipts using the platform number or your custom account.
+                      </p>
+                    </div>
+                    <div>
+                      <Button
+                        size="sm"
+                        onClick={handleSavePreferences}
+                        disabled={isPreferencesSaving}
+                        className="bg-emerald-500 hover:bg-emerald-600 text-white text-xs font-bold cursor-pointer"
+                      >
+                        {isPreferencesSaving ? 'Saving...' : 'Save WhatsApp Settings'}
+                      </Button>
+                    </div>
+                  </div>
+
+                  {/* Master Toggle Card */}
+                  <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-5 rounded-2xl space-y-4">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-xs font-black text-slate-850 dark:text-slate-200 uppercase tracking-wider">
+                          WhatsApp Messaging
+                        </p>
+                        <p className="text-[11px] text-slate-400">
+                          Toggle WhatsApp notifications for your invoices and payment receipts.
+                        </p>
+                      </div>
+                      <Switch
+                        checked={preferences.whatsAppEnabled}
+                        onCheckedChange={(checked) =>
+                          setPreferences((p) => ({ ...p, whatsAppEnabled: checked }))
+                        }
+                      />
+                    </div>
+                    
+                    {preferences.whatsAppEnabled && (
+                      <div className="p-4 bg-emerald-50/50 dark:bg-emerald-950/20 rounded-xl border border-emerald-100/50 dark:border-emerald-950/30 text-[11px] text-emerald-800 dark:text-emerald-300">
+                        <span className="font-bold">How it works:</span> By default, invoices and notifications are sent using Virbic's shared platform number. Clients can reply with <code className="px-1.5 py-0.5 bg-emerald-100 dark:bg-emerald-900 rounded font-bold">pay</code> or <code className="px-1.5 py-0.5 bg-emerald-100 dark:bg-emerald-900 rounded font-bold">invoice</code> to get direct links to their unpaid invoices and the UPI payment portal.
+                      </div>
+                    )}
+                  </div>
+
+                  {preferences.whatsAppEnabled && (
+                    <>
+                      {/* Configuration Settings */}
+                      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-5 rounded-2xl space-y-6">
                         <div>
-                          <h3 className="text-xs font-black text-slate-800 dark:text-slate-200 uppercase tracking-wider">
-                            Automated Reminders Schedule
+                          <h3 className="text-xs font-black text-slate-850 dark:text-slate-200 uppercase tracking-wider">
+                            Sender Settings
                           </h3>
-                          <p className="text-[10px] text-slate-500 mt-0.5">
-                            Automate reminder delivery sequences for outstanding client accounts.
+                          <p className="text-[10px] text-slate-400">
+                            Choose between the Virbic shared number or your own custom developer credentials.
                           </p>
                         </div>
-                        <Switch
-                          checked={notifs.reminderOverdueEnabled}
-                          onCheckedChange={(checked) =>
-                            setNotifs((prev) => ({ ...prev, reminderOverdueEnabled: checked }))
-                          }
-                        />
-                      </div>
 
-                      {notifs.reminderOverdueEnabled && (
-                        <div className="space-y-4 p-4 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-850 rounded-xl">
-                          <div className="grid grid-cols-2 gap-4">
-                            <div className="space-y-1">
-                              <label className="block text-[10px] font-bold text-slate-450 uppercase tracking-wide">
-                                Dispatch Interval (Days)
-                              </label>
-                              <Input
-                                type="number"
-                                min="1"
-                                value={notifs.reminderFrequencyDays}
-                                onChange={(e) =>
-                                  setNotifs((prev) => ({
-                                    ...prev,
-                                    reminderFrequencyDays: Number(e.target.value),
-                                  }))
-                                }
-                                className="h-9 text-xs border-slate-300 dark:border-slate-800 bg-white dark:bg-slate-950 font-bold"
-                              />
+                        <div className="space-y-4">
+                          <div className="space-y-4 border-t border-slate-100 dark:border-slate-850 pt-4">
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                              <div className="space-y-2">
+                                <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider">WhatsApp Provider</label>
+                                <Select
+                                  value={preferences.whatsAppProvider}
+                                  onValueChange={(val) => setPreferences(p => ({ ...p, whatsAppProvider: val }))}
+                                >
+                                  <SelectTrigger className="text-xs font-semibold">
+                                    <SelectValue placeholder="Select Provider" />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    <SelectItem value="twilio">Twilio (v1 Sandbox / API)</SelectItem>
+                                    <SelectItem value="meta" disabled>Meta Cloud API (Coming soon)</SelectItem>
+                                  </SelectContent>
+                                </Select>
+                              </div>
+
+                              <div className="space-y-2">
+                                <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Custom WhatsApp Sender Number</label>
+                                <Input
+                                  placeholder="e.g. +14155238886 (leave blank for platform default)"
+                                  value={preferences.twilioWhatsAppNumber}
+                                  onChange={(e) => setPreferences(p => ({ ...p, twilioWhatsAppNumber: e.target.value }))}
+                                  className="text-xs font-semibold"
+                                />
+                              </div>
                             </div>
 
-                            <div className="space-y-1">
-                              <label className="block text-[10px] font-bold text-slate-450 uppercase tracking-wide">
-                                Maximum reminder dispatch limit
-                              </label>
-                              <Input
-                                type="number"
-                                min="1"
-                                value={notifs.reminderMaxCount}
-                                onChange={(e) =>
-                                  setNotifs((prev) => ({
-                                    ...prev,
-                                    reminderMaxCount: Number(e.target.value),
-                                  }))
-                                }
-                                className="h-9 text-xs border-slate-300 dark:border-slate-800 bg-white dark:bg-slate-950 font-bold"
-                              />
-                            </div>
-                          </div>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                              <div className="space-y-2">
+                                <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Twilio Account SID</label>
+                                <Input
+                                  type="password"
+                                  placeholder="AC... (leave blank for platform default)"
+                                  value={preferences.twilioAccountSid}
+                                  onChange={(e) => setPreferences(p => ({ ...p, twilioAccountSid: e.target.value }))}
+                                  className="text-xs font-semibold"
+                                />
+                              </div>
 
-                          <div className="space-y-1">
-                            <label className="block text-[10px] font-bold text-slate-450 uppercase tracking-wide">
-                              Reminder Email Subject Template
-                            </label>
-                            <Input
-                              type="text"
-                              value={notifs.reminderSubjectTemplate}
-                              onChange={(e) =>
-                                setNotifs((prev) => ({
-                                  ...prev,
-                                  reminderSubjectTemplate: e.target.value,
-                                }))
-                              }
-                              className="h-9 text-xs border-slate-300 dark:border-slate-800 bg-white dark:bg-slate-950 font-medium text-slate-800 dark:text-slate-250"
-                              placeholder="e.g. Reminder: Invoice {number} is overdue"
-                            />
-                          </div>
-
-                          <div className="space-y-1">
-                            <label className="block text-[10px] font-bold text-slate-450 uppercase tracking-wide">
-                              Reminder Email Body Template
-                            </label>
-                            <textarea
-                              rows={6}
-                              value={notifs.reminderBodyTemplate || ''}
-                              onChange={(e) =>
-                                setNotifs((prev) => ({
-                                  ...prev,
-                                  reminderBodyTemplate: e.target.value,
-                                }))
-                              }
-                              className="w-full p-2 text-xs border border-slate-300 dark:border-slate-800 rounded-lg bg-white dark:bg-slate-950 font-medium text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-emerald-500"
-                              placeholder="Dear {client_name},&#10;&#10;This is a polite reminder that invoice {number} with balance {amount} is overdue.&#10;&#10;Please view and pay here: {share_link}&#10;&#10;Best,&#10;{business_name}"
-                            />
-                          </div>
-
-                          <div className="text-[10px] text-slate-400 dark:text-slate-500 leading-normal space-y-1">
-                            <p className="font-bold uppercase tracking-wider text-slate-500">Available Placeholders:</p>
-                            <div className="grid grid-cols-2 gap-1 font-mono bg-slate-100 dark:bg-slate-950 p-2 rounded border border-slate-200 dark:border-slate-850 text-slate-700 dark:text-slate-400">
-                              <div><span className="text-emerald-600 dark:text-emerald-400 font-bold">{"{number}"}</span> - Invoice No.</div>
-                              <div><span className="text-emerald-600 dark:text-emerald-400 font-bold">{"{amount}"}</span> - Outstanding Amt</div>
-                              <div><span className="text-emerald-600 dark:text-emerald-400 font-bold">{"{client_name}"}</span> - Client Name</div>
-                              <div><span className="text-emerald-600 dark:text-emerald-400 font-bold">{"{due_date}"}</span> - Due Date</div>
-                              <div><span className="text-emerald-600 dark:text-emerald-400 font-bold">{"{days_overdue}"}</span> - Days Overdue</div>
-                              <div><span className="text-emerald-600 dark:text-emerald-400 font-bold">{"{share_link}"}</span> - Public Invoice URL</div>
-                              <div className="col-span-2"><span className="text-emerald-600 dark:text-emerald-400 font-bold">{"{business_name}"}</span> - Business Name</div>
+                              <div className="space-y-2">
+                                <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Twilio Auth Token</label>
+                                <Input
+                                  type="password"
+                                  placeholder="Token... (leave blank for platform default)"
+                                  value={preferences.twilioAuthToken}
+                                  onChange={(e) => setPreferences(p => ({ ...p, twilioAuthToken: e.target.value }))}
+                                  className="text-xs font-semibold"
+                                />
+                              </div>
                             </div>
                           </div>
                         </div>
-                      )}
-                    </div>
+                      </div>
 
-                    {/* Save Notifications */}
+                      {/* Connection Test Card */}
+                      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-5 rounded-2xl space-y-4">
+                        <div>
+                          <h3 className="text-xs font-black text-slate-850 dark:text-slate-200 uppercase tracking-wider">
+                            Test Connection
+                          </h3>
+                          <p className="text-[10px] text-slate-400">
+                            Send a test WhatsApp message to verify your settings.
+                          </p>
+                        </div>
+                        <div className="flex flex-col sm:flex-row gap-3">
+                          <Input
+                            placeholder="Recipient phone number (e.g. +91XXXXXXXXXX)"
+                            value={testPhone}
+                            onChange={(e) => setTestPhone(e.target.value)}
+                            className="text-xs font-semibold max-w-sm"
+                          />
+                          <Button
+                            onClick={handleTestWhatsAppConnection}
+                            disabled={isTestingConnection}
+                            className="bg-slate-850 hover:bg-slate-800 text-white text-xs font-bold cursor-pointer"
+                          >
+                            {isTestingConnection ? (
+                              <>
+                                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                                <span>Sending...</span>
+                              </>
+                            ) : (
+                              <span>Test Delivery</span>
+                            )}
+                          </Button>
+                        </div>
+                      </div>
+
+                      {/* Template Previews */}
+                      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-5 rounded-2xl space-y-4">
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                          <div>
+                            <h3 className="text-xs font-black text-slate-850 dark:text-slate-200 uppercase tracking-wider">
+                              Template Previews
+                            </h3>
+                            <p className="text-[10px] text-slate-455">
+                              Preview system-wide WhatsApp notifications sent to your clients.
+                            </p>
+                          </div>
+                          <Select
+                            value={selectedWaTemplate}
+                            onValueChange={(val) => { if (val) setSelectedWaTemplate(val); }}
+                          >
+                            <SelectTrigger className="w-64 text-xs font-semibold">
+                              <SelectValue placeholder="Select Template" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {STATIC_WA_TEMPLATES.map((tmpl) => (
+                                <SelectItem key={tmpl.name} value={tmpl.name}>
+                                  {tmpl.label}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+
+                        {/* Preview Box */}
+                        <div className="p-4 bg-slate-50 dark:bg-slate-950 rounded-xl border border-slate-100 dark:border-slate-900 relative">
+                          <div className="absolute top-2 right-2 bg-emerald-500/10 text-emerald-600 px-1.5 py-0.5 text-[8px] font-black uppercase rounded tracking-wider">
+                            WhatsApp Preview
+                          </div>
+                          <div className="font-sans text-[11px] text-slate-800 dark:text-slate-300 leading-relaxed whitespace-pre-wrap max-w-lg">
+                            {compileWhatsAppTemplatePreview(
+                              STATIC_WA_TEMPLATES.find((t) => t.name === selectedWaTemplate)?.content || '',
+                              activeBusiness?.name || ''
+                            )}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Quick Logs Link */}
+                      <div className="flex items-center justify-between p-4 bg-slate-50 dark:bg-slate-950/40 rounded-xl border border-slate-100 dark:border-slate-850">
+                        <div>
+                          <p className="text-xs font-bold text-slate-700 dark:text-slate-355">Conversation Logs</p>
+                          <p className="text-[10px] text-slate-400">View logs and active WhatsApp chats with your clients</p>
+                        </div>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => router.push('/whatsapp/logs')}
+                          className="text-xs font-bold border-slate-205 text-slate-700 dark:text-slate-300 dark:border-slate-800 cursor-pointer flex items-center gap-1.5"
+                        >
+                          <ExternalLink className="w-3.5 h-3.5" />
+                          <span>View Logs</span>
+                        </Button>
+                      </div>
+                    </>
+                  )}
+                </div>
+              )}
+
+              {/* ── TAB: CLIENT PORTAL CONFIGURATION ── */}
+              {activeTab === 'portal' && (
+                <div className="space-y-8 max-w-4xl">
+                  <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                    <div>
+                      <h2 className="text-base font-extrabold text-slate-850 dark:text-slate-100 flex items-center gap-2">
+                        <Globe className="w-5 h-5 text-emerald-650" />
+                        <span>Client Portal Settings</span>
+                      </h2>
+                      <p className="text-[11px] text-slate-455">
+                        Set up a branded client workspace where customers can view, download, and pay invoices.
+                      </p>
+                    </div>
                     <Button
-                      onClick={handleSaveNotifications}
-                      disabled={isNotifsSaving}
-                      className="w-full h-10 bg-emerald-500 hover:bg-emerald-600 text-white font-bold text-xs cursor-pointer shadow-md shadow-emerald-500/10"
+                      onClick={handleSavePortalPrefs}
+                      disabled={isPortalPrefsSaving}
+                      className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold h-9 text-xs px-4 rounded-lg cursor-pointer"
                     >
-                      {isNotifsSaving ? (
+                      {isPortalPrefsSaving ? (
                         <>
-                          <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                          <span>Saving Configs...</span>
+                          <Loader2 className="w-3.5 h-3.5 animate-spin mr-1.5" />
+                          <span>Saving Defaults...</span>
                         </>
                       ) : (
-                        <span>Save Notifications Configs</span>
+                        <span>Save Defaults</span>
                       )}
                     </Button>
                   </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    {/* Left Column: General Configuration */}
+                    <div className="space-y-6">
+                      <Card className="p-5 border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 rounded-xl space-y-4 text-left">
+                        <h3 className="text-xs font-extrabold uppercase text-slate-400 tracking-wider">
+                          Portal Configuration
+                        </h3>
+                        <div className="space-y-4">
+                          <div className="flex items-center justify-between">
+                            <div>
+                              <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block">Enable Client Portal</label>
+                              <span className="text-[10px] text-slate-405">Master toggle for portal access.</span>
+                            </div>
+                            <Switch
+                              checked={portalPrefs.portalEnabledDefault}
+                              onCheckedChange={(val) => setPortalPrefs(prev => ({ ...prev, portalEnabledDefault: val }))}
+                            />
+                          </div>
+
+                          <div className="flex items-center justify-between">
+                            <div>
+                              <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block">Auto-create portals</label>
+                              <span className="text-[10px] text-slate-405">Auto-create portal link when adding new clients.</span>
+                            </div>
+                            <Switch
+                              checked={portalPrefs.portalAutoCreate}
+                              onCheckedChange={(val) => setPortalPrefs(prev => ({ ...prev, portalAutoCreate: val }))}
+                            />
+                          </div>
+
+                          <div className="space-y-2 pt-2 border-t border-slate-105 dark:border-slate-850">
+                            <div className="flex items-center justify-between">
+                              <div>
+                                <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block">Default password protection</label>
+                                <span className="text-[10px] text-slate-405">Secure portals with password check by default.</span>
+                              </div>
+                              <Switch
+                                checked={!!portalPrefs.portalPasswordDefault}
+                                onCheckedChange={(val) => setPortalPrefs(prev => ({ ...prev, portalPasswordDefault: val ? 'ChangeMe123' : '' }))}
+                              />
+                            </div>
+                            {!!portalPrefs.portalPasswordDefault && (
+                              <Input
+                                type="text"
+                                placeholder="Enter default portal password"
+                                value={portalPrefs.portalPasswordDefault}
+                                onChange={(e) => setPortalPrefs(prev => ({ ...prev, portalPasswordDefault: e.target.value }))}
+                                className="text-xs mt-1"
+                              />
+                            )}
+                          </div>
+                        </div>
+                      </Card>
+
+                      <Card className="p-5 border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 rounded-xl space-y-4 text-left">
+                        <h3 className="text-xs font-extrabold uppercase text-slate-400 tracking-wider">
+                          Branding Defaults
+                        </h3>
+                        <div className="space-y-4">
+                          <div className="flex items-center justify-between">
+                            <div>
+                              <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block">Use Business Branding</label>
+                              <span className="text-[10px] text-slate-405">Inherit your default business logo and brand color.</span>
+                            </div>
+                            <Switch
+                              checked={portalPrefs.portalUseBusinessBranding}
+                              onCheckedChange={(val) => setPortalPrefs(prev => ({ ...prev, portalUseBusinessBranding: val }))}
+                            />
+                          </div>
+
+                          {!portalPrefs.portalUseBusinessBranding && (
+                            <div className="space-y-3 pt-2 border-t border-slate-105 dark:border-slate-850">
+                              <div>
+                                <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block mb-1">Custom Portal Title</label>
+                                <Input
+                                  type="text"
+                                  placeholder="e.g., RS Tech Client Portal"
+                                  value={portalPrefs.portalTitleDefault || ''}
+                                  onChange={(e) => setPortalPrefs(prev => ({ ...prev, portalTitleDefault: e.target.value }))}
+                                  className="text-xs"
+                                />
+                              </div>
+
+                              <div>
+                                <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block mb-1">Custom Portal Color</label>
+                                <div className="flex gap-2 items-center">
+                                  <input
+                                    type="color"
+                                    value={portalPrefs.portalBrandColorDefault}
+                                    onChange={(e) => setPortalPrefs(prev => ({ ...prev, portalBrandColorDefault: e.target.value }))}
+                                    className="w-8 h-8 rounded-lg cursor-pointer border border-slate-200 dark:border-slate-800"
+                                  />
+                                  <Input
+                                    type="text"
+                                    value={portalPrefs.portalBrandColorDefault}
+                                    onChange={(e) => setPortalPrefs(prev => ({ ...prev, portalBrandColorDefault: e.target.value }))}
+                                    className="text-xs font-mono w-28 h-8"
+                                  />
+                                </div>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      </Card>
+                    </div>
+
+                    {/* Right Column: Portal Preview & Features */}
+                    <div className="space-y-6">
+                      <Card className="p-5 border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 rounded-xl space-y-4 text-left">
+                        <h3 className="text-xs font-extrabold uppercase text-slate-400 tracking-wider">
+                          Feature Toggles (per portal defaults)
+                        </h3>
+                        <div className="space-y-4">
+                          <div className="flex items-center justify-between">
+                            <div>
+                              <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block">Show paid invoices</label>
+                              <span className="text-[10px] text-slate-405">Allow clients to view past paid invoices in history.</span>
+                            </div>
+                            <Switch
+                              checked={portalPrefs.portalShowPaidDefault}
+                              onCheckedChange={(val) => setPortalPrefs(prev => ({ ...prev, portalShowPaidDefault: val }))}
+                            />
+                          </div>
+
+                          <div className="flex items-center justify-between">
+                            <div>
+                              <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block">Allow PDF download</label>
+                              <span className="text-[10px] text-slate-405">Clients can download dynamic PDFs of their invoices.</span>
+                            </div>
+                            <Switch
+                              checked={portalPrefs.portalAllowPdfDefault}
+                              onCheckedChange={(val) => setPortalPrefs(prev => ({ ...prev, portalAllowPdfDefault: val }))}
+                            />
+                          </div>
+
+                          <div className="flex items-center justify-between">
+                            <div>
+                              <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block">Allow online payment</label>
+                              <span className="text-[10px] text-slate-405">Pay invoice directly via Razorpay link.</span>
+                            </div>
+                            <Switch
+                              checked={portalPrefs.portalAllowPaymentDefault}
+                              onCheckedChange={(val) => setPortalPrefs(prev => ({ ...prev, portalAllowPaymentDefault: val }))}
+                            />
+                          </div>
+
+                          <div className="flex items-center justify-between">
+                            <div>
+                              <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block">Show payment history</label>
+                              <span className="text-[10px] text-slate-405">Include a ledger list of completed invoice payments.</span>
+                            </div>
+                            <Switch
+                              checked={portalPrefs.portalShowHistoryDefault}
+                              onCheckedChange={(val) => setPortalPrefs(prev => ({ ...prev, portalShowHistoryDefault: val }))}
+                            />
+                          </div>
+                        </div>
+                      </Card>
+
+                      <Card className="p-5 border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 rounded-xl space-y-4 text-left">
+                        <h3 className="text-xs font-extrabold uppercase text-slate-400 tracking-wider">
+                          Portal Quick Preview
+                        </h3>
+                        <div className="space-y-3.5">
+                          <div>
+                            <label className="text-[11px] font-bold text-slate-500 block mb-1">Select Client</label>
+                            <select
+                              value={previewClientId}
+                              onChange={(e) => setPreviewClientId(e.target.value)}
+                              className="w-full text-xs h-9 px-3.5 border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 rounded-lg focus:outline-none focus:ring-1 focus:ring-slate-300 text-slate-800 dark:text-slate-100"
+                            >
+                              <option value="">-- Choose Client --</option>
+                              {clients.map((c) => (
+                                <option key={c.id} value={c.id}>
+                                  {c.name} {c.portal ? `(slug: ${c.portal.slug})` : '(No Portal)'}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+
+                          {(() => {
+                            const selectedClient = clients.find(c => c.id === previewClientId);
+                            if (!selectedClient) return <p className="text-[11px] text-slate-400 italic">Select a client to see preview details.</p>;
+                            if (!selectedClient.portal) return (
+                              <div className="space-y-2">
+                                <p className="text-[11px] text-amber-600 bg-amber-50 dark:bg-amber-950/20 p-2.5 rounded-lg font-medium">This client does not have a portal configured.</p>
+                                <Button 
+                                  onClick={() => handleOpenEditPortal(selectedClient)} 
+                                  className="w-full bg-slate-800 dark:bg-slate-700 text-white font-bold h-8 text-xs rounded-lg cursor-pointer"
+                                >
+                                  Create Client Portal
+                                </Button>
+                              </div>
+                            );
+
+                            const appUrl = typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3000';
+                            const portalUrl = `${appUrl}/portal/${selectedClient.portal.slug}`;
+
+                            return (
+                              <div className="space-y-3 pt-1">
+                                <div className="p-3 bg-slate-50 dark:bg-slate-950 border border-slate-150 dark:border-slate-850 rounded-xl space-y-1">
+                                  <span className="text-[9px] font-extrabold uppercase text-slate-400 block tracking-wider">Portal URL</span>
+                                  <a 
+                                    href={portalUrl} 
+                                    target="_blank" 
+                                    rel="noreferrer"
+                                    className="text-xs font-mono font-bold text-emerald-650 hover:underline flex items-center gap-1 leading-tight break-all"
+                                  >
+                                    <span>{portalUrl}</span>
+                                    <ExternalLink className="w-3 h-3 shrink-0" />
+                                  </a>
+                                </div>
+
+                                <div className="flex gap-2">
+                                  <Button
+                                    onClick={() => {
+                                      navigator.clipboard.writeText(portalUrl);
+                                      toast.success('Link copied to clipboard');
+                                    }}
+                                    variant="outline"
+                                    className="flex-1 h-8 text-xs font-semibold border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-350 gap-1 rounded-lg cursor-pointer"
+                                  >
+                                    <Copy className="w-3.5 h-3.5 text-slate-405" />
+                                    <span>Copy Link</span>
+                                  </Button>
+                                  <a href={portalUrl} target="_blank" rel="noreferrer" className="flex-1">
+                                    <Button
+                                      className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold h-8 text-xs gap-1 rounded-lg cursor-pointer"
+                                    >
+                                      <Globe className="w-3.5 h-3.5" />
+                                      <span>Open Portal</span>
+                                    </Button>
+                                  </a>
+                                </div>
+                              </div>
+                            );
+                          })()}
+                        </div>
+                      </Card>
+                    </div>
+                  </div>
+
+                  {/* Per-Client Portal Management Table */}
+                  <Card className="p-6 border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 rounded-3xl text-left space-y-4">
+                    <div>
+                      <h3 className="text-sm font-black text-slate-900 dark:text-slate-100">
+                        Per-Client Portal Management
+                      </h3>
+                      <p className="text-xs text-slate-455 mt-0.5">
+                        Manage custom settings, access control, and passwords per customer portal.
+                      </p>
+                    </div>
+
+                    <div className="overflow-x-auto border border-slate-150/40 dark:border-slate-850/30 rounded-xl">
+                      <table className="w-full text-left text-xs border-collapse">
+                        <thead>
+                          <tr className="bg-slate-50/50 dark:bg-slate-950/20 text-[10px] font-extrabold uppercase text-slate-400 tracking-wider border-b border-slate-150/30 dark:border-slate-850/20">
+                            <th className="p-3">Client</th>
+                            <th className="p-3">Slug / Link</th>
+                            <th className="p-3">Status</th>
+                            <th className="p-3">Password Protected</th>
+                            <th className="p-3 text-center">Actions</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-150/30 dark:divide-slate-850/15">
+                          {clients.map((c) => {
+                            const appUrl = typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3000';
+                            const portalUrl = c.portal ? `${appUrl}/portal/${c.portal.slug}` : '';
+
+                            return (
+                              <tr key={c.id} className="hover:bg-slate-50/30 dark:hover:bg-slate-850/10">
+                                <td className="p-3 font-bold text-slate-800 dark:text-slate-200">
+                                  {c.name}
+                                </td>
+                                <td className="p-3 font-mono text-slate-500">
+                                  {c.portal ? (
+                                    <div className="flex items-center gap-1.5">
+                                      <span className="truncate max-w-[200px]">{c.portal.slug}</span>
+                                      <button 
+                                        onClick={() => {
+                                          navigator.clipboard.writeText(portalUrl);
+                                          toast.success('Link copied');
+                                        }}
+                                        className="text-slate-400 hover:text-slate-650 cursor-pointer"
+                                        title="Copy Portal URL"
+                                      >
+                                        <Copy className="w-3 h-3" />
+                                      </button>
+                                    </div>
+                                  ) : (
+                                    <span className="italic text-slate-400">No portal</span>
+                                  )}
+                                </td>
+                                <td className="p-3">
+                                  {c.portal ? (
+                                    <div className="flex items-center gap-2">
+                                      <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[9px] font-bold border ${c.portal.enabled ? 'text-emerald-700 bg-emerald-50 border-emerald-100 dark:bg-emerald-950/20 dark:text-emerald-450 dark:border-emerald-900/30' : 'text-slate-550 bg-slate-50 border-slate-200 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-700'}`}>
+                                        {c.portal.enabled ? 'Active' : 'Disabled'}
+                                      </span>
+                                      <Switch
+                                        checked={c.portal.enabled}
+                                        onCheckedChange={() => handleTogglePortalEnabled(c)}
+                                      />
+                                    </div>
+                                  ) : (
+                                    <span className="text-slate-400 text-[10px]">—</span>
+                                  )}
+                                </td>
+                                <td className="p-3">
+                                  {c.portal ? (
+                                    <span className={`inline-flex items-center gap-1 text-[10px] font-bold ${c.portal.hasPassword ? 'text-emerald-650' : 'text-slate-400'}`}>
+                                      {c.portal.hasPassword ? (
+                                        <>
+                                          <Lock className="w-3.5 h-3.5 text-emerald-500" />
+                                          <span>Yes</span>
+                                        </>
+                                      ) : 'No'}
+                                    </span>
+                                  ) : (
+                                    <span className="text-slate-400 text-[10px]">—</span>
+                                  )}
+                                </td>
+                                <td className="p-3 text-center flex items-center justify-center gap-2">
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => handleOpenEditPortal(c)}
+                                    className="h-7 text-[10px] font-semibold border-slate-200 dark:border-slate-800 text-slate-750 dark:text-slate-300 gap-1 rounded-md cursor-pointer"
+                                  >
+                                    <Edit2 className="w-3 h-3 text-slate-450" />
+                                    <span>{c.portal ? 'Edit Portal' : 'Create Portal'}</span>
+                                  </Button>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  </Card>
                 </div>
               )}
 
@@ -1858,6 +3361,171 @@ export default function SettingsClient({
                 className="bg-red-650 hover:bg-red-700 text-white font-bold text-xs h-8 cursor-pointer"
               >
                 {isDangerLoading ? 'Processing...' : 'Authorize Delete'}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── DIALOG: EDIT CLIENT PORTAL ── */}
+      <Dialog open={isEditPortalOpen} onOpenChange={setIsEditPortalOpen}>
+        <DialogContent className="sm:max-w-[500px] bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-xl overflow-y-auto max-h-[85vh] text-left">
+          <DialogHeader>
+            <DialogTitle className="text-base font-extrabold text-slate-900 dark:text-slate-50 tracking-tight text-left">
+              Configure Client Portal
+            </DialogTitle>
+            <DialogDescription className="text-xs text-slate-500 text-left">
+              Set custom portal URLs, passwords, and visibility preferences for {editingPortalClient?.name}.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 pt-2 text-left">
+            <div>
+              <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wide mb-1">
+                Portal Slug (URL-friendly)
+              </label>
+              <div className="flex items-center gap-1.5 font-mono text-xs text-slate-500 bg-slate-50 dark:bg-slate-950 p-2.5 rounded-lg border border-slate-200 dark:border-slate-850">
+                <span>/portal/</span>
+                <input
+                  type="text"
+                  value={editPortalForm.slug}
+                  onChange={(e) => setEditPortalForm(prev => ({ ...prev, slug: e.target.value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') }))}
+                  className="font-mono bg-transparent focus:outline-none flex-1 font-bold text-slate-800 dark:text-slate-100"
+                />
+              </div>
+            </div>
+
+            <div className="space-y-2 border-t border-slate-100 dark:border-slate-850 pt-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <label className="text-xs font-bold text-slate-700 dark:text-slate-350 block">Password Protection</label>
+                  <span className="text-[10px] text-slate-400">Lock portal access behind a client password.</span>
+                </div>
+                <Switch
+                  checked={!editPortalForm.clearPassword && (!!editPortalForm.password || !!editingPortalClient?.portal?.hasPassword)}
+                  onCheckedChange={(checked) => {
+                    if (checked) {
+                      setEditPortalForm(prev => ({ ...prev, clearPassword: false, password: prev.password || 'ChangeMe123' }));
+                    } else {
+                      setEditPortalForm(prev => ({ ...prev, clearPassword: true, password: '' }));
+                    }
+                  }}
+                />
+              </div>
+
+              {(!editPortalForm.clearPassword && (!!editPortalForm.password || !!editingPortalClient?.portal?.hasPassword)) && (
+                <div className="space-y-1 pt-1">
+                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wide">
+                    New Password
+                  </label>
+                  <Input
+                    type="text"
+                    placeholder={editingPortalClient?.portal?.hasPassword ? "Leave blank to keep current password" : "Enter portal password"}
+                    value={editPortalForm.password}
+                    onChange={(e) => setEditPortalForm(prev => ({ ...prev, password: e.target.value }))}
+                    className="text-xs"
+                  />
+                  {editingPortalClient?.portal?.hasPassword && (
+                    <div className="flex items-center gap-1.5 mt-1.5">
+                      <input
+                        type="checkbox"
+                        id="clear-pwd"
+                        checked={editPortalForm.clearPassword}
+                        onChange={(e) => setEditPortalForm(prev => ({ ...prev, clearPassword: e.target.checked, password: e.target.checked ? '' : prev.password }))}
+                        className="rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
+                      />
+                      <label htmlFor="clear-pwd" className="text-[10px] font-bold text-red-500 cursor-pointer">
+                        Remove password protection completely
+                      </label>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            <div className="space-y-3 border-t border-slate-100 dark:border-slate-850 pt-3">
+              <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wide">
+                Custom Branding Overrides
+              </label>
+
+              <div>
+                <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block mb-1">Portal Title</label>
+                <Input
+                  type="text"
+                  placeholder="e.g., Acme Invoicing Space"
+                  value={editPortalForm.title}
+                  onChange={(e) => setEditPortalForm(prev => ({ ...prev, title: e.target.value }))}
+                  className="text-xs"
+                />
+              </div>
+
+              <div>
+                <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block mb-1">Brand Theme Color</label>
+                <div className="flex gap-2 items-center">
+                  <input
+                    type="color"
+                    value={editPortalForm.brandColor}
+                    onChange={(e) => setEditPortalForm(prev => ({ ...prev, brandColor: e.target.value }))}
+                    className="w-8 h-8 rounded-lg cursor-pointer border border-slate-200 dark:border-slate-800"
+                  />
+                  <Input
+                    type="text"
+                    value={editPortalForm.brandColor}
+                    onChange={(e) => setEditPortalForm(prev => ({ ...prev, brandColor: e.target.value }))}
+                    className="text-xs font-mono w-28 h-8"
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div className="space-y-3 border-t border-slate-100 dark:border-slate-850 pt-3">
+              <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wide">
+                Feature Switches
+              </label>
+
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-semibold text-slate-700 dark:text-slate-300">Show paid invoices</span>
+                <Switch
+                  checked={editPortalForm.showPaidInvoices}
+                  onCheckedChange={(val) => setEditPortalForm(prev => ({ ...prev, showPaidInvoices: val }))}
+                />
+              </div>
+
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-semibold text-slate-700 dark:text-slate-300">Allow PDF download</span>
+                <Switch
+                  checked={editPortalForm.allowPdfDownload}
+                  onCheckedChange={(val) => setEditPortalForm(prev => ({ ...prev, allowPdfDownload: val }))}
+                />
+              </div>
+
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-semibold text-slate-700 dark:text-slate-300">Allow online payments</span>
+                <Switch
+                  checked={editPortalForm.allowPayment}
+                  onCheckedChange={(val) => setEditPortalForm(prev => ({ ...prev, allowPayment: val }))}
+                />
+              </div>
+
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-semibold text-slate-700 dark:text-slate-300">Show payment history ledger</span>
+                <Switch
+                  checked={editPortalForm.showPaymentHistory}
+                  onCheckedChange={(val) => setEditPortalForm(prev => ({ ...prev, showPaymentHistory: val }))}
+                />
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-3 pt-3 border-t border-slate-100 dark:border-slate-850">
+              <Button variant="outline" size="sm" onClick={() => setIsEditPortalOpen(false)} className="h-8 text-xs font-bold">
+                Cancel
+              </Button>
+              <Button
+                disabled={isSavingPortalClient || !editPortalForm.slug.trim()}
+                onClick={handleSaveClientPortal}
+                className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs h-8 cursor-pointer"
+              >
+                {isSavingPortalClient ? 'Saving...' : 'Save Portal Settings'}
               </Button>
             </div>
           </div>

@@ -9,22 +9,26 @@ interface PublicDownloadButtonProps {
   shareId: string;
   password?: string;
   invoiceNumber: string;
+  asReceipt?: boolean;
 }
 
 export default function PublicDownloadButton({
   shareId,
   password,
   invoiceNumber,
+  asReceipt = false,
 }: PublicDownloadButtonProps) {
   const [isDownloading, setIsDownloading] = useState(false);
 
   const handleDownload = async () => {
     setIsDownloading(true);
     try {
-      let url = `/api/invoices/share/${shareId}/pdf`;
-      if (password) {
-        url += `?password=${encodeURIComponent(password)}`;
-      }
+      const params = new URLSearchParams();
+      if (password) params.set('password', password);
+      if (asReceipt) params.set('receipt', '1');
+      
+      const queryString = params.toString();
+      const url = `/api/invoices/share/${shareId}/pdf${queryString ? `?${queryString}` : ''}`;
       
       const res = await fetch(url);
       if (!res.ok) {
@@ -37,7 +41,7 @@ export default function PublicDownloadButton({
       const link = document.createElement('a');
       link.href = blobUrl;
       const cleanNum = invoiceNumber.replace(/[^a-zA-Z0-9-_]/g, '_');
-      link.download = `Invoice_${cleanNum}.pdf`;
+      link.download = asReceipt ? `Receipt_${cleanNum}.pdf` : `Invoice_${cleanNum}.pdf`;
       
       document.body.appendChild(link);
       link.click();

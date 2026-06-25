@@ -24,6 +24,7 @@ export async function GET(
 
     const client = await prisma.client.findUnique({
       where: { id },
+      include: { portal: true }
     });
 
     if (!client || client.userId !== user.id) {

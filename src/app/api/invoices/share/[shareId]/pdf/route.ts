@@ -108,11 +108,16 @@ export async function GET(
       },
     };
 
+    const { searchParams } = new URL(request.url);
+    const asReceipt = searchParams.get('receipt') === '1';
+
     // Generate PDF
-    const pdfBuffer = await generateInvoicePDF(pdfData);
+    const pdfBuffer = await generateInvoicePDF(pdfData, { asReceipt });
 
     const cleanInvoiceNum = invoice.invoiceNumber.replace(/[^a-zA-Z0-9-_]/g, '_');
-    const filename = `Invoice_${cleanInvoiceNum}.pdf`;
+    const filename = asReceipt
+      ? `Receipt_${cleanInvoiceNum}.pdf`
+      : `Invoice_${cleanInvoiceNum}.pdf`;
 
     return new NextResponse(pdfBuffer as any, {
       status: 200,

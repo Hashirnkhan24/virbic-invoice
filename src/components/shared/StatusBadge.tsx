@@ -1,11 +1,21 @@
 import { InvoiceStatus } from '@prisma/client';
+import { formatCurrency } from '@/lib/helpers';
 
 interface StatusBadgeProps {
   status: InvoiceStatus | string;
   className?: string;
+  amountPaid?: number;
+  grandTotal?: number;
+  currency?: string;
 }
 
-export default function StatusBadge({ status, className = '' }: StatusBadgeProps) {
+export default function StatusBadge({
+  status,
+  className = '',
+  amountPaid,
+  grandTotal,
+  currency = 'INR'
+}: StatusBadgeProps) {
   const normalizedStatus = status.toUpperCase();
 
   let styles = 'bg-slate-100 text-slate-600 border-slate-200 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-700';
@@ -51,9 +61,14 @@ export default function StatusBadge({ status, className = '' }: StatusBadgeProps
       break;
   }
 
+  const tooltip = normalizedStatus === 'PARTIAL' && amountPaid !== undefined && grandTotal !== undefined
+    ? `Collected: ${formatCurrency(amountPaid, currency)} / ${formatCurrency(grandTotal, currency)}`
+    : undefined;
+
   return (
     <span
-      className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold border transition-colors ${styles} ${className}`}
+      title={tooltip}
+      className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold border transition-colors ${styles} ${className} ${tooltip ? 'cursor-help' : ''}`}
     >
       <span className={`w-1.5 h-1.5 rounded-full ${dotColor}`} />
       {label}

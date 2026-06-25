@@ -54,6 +54,7 @@ import { formatCurrency } from '@/lib/helpers';
 import { currencies } from '@/lib/currency';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
+import PaymentSchedule from '@/components/invoices/PaymentSchedule';
 
 export default function NewInvoicePage() {
   const router = useRouter();
@@ -1146,6 +1147,15 @@ export default function NewInvoicePage() {
               </div>
             </div>
           </div>
+          
+          <PaymentSchedule
+            grandTotal={totals.grandTotal}
+            currency={formState.currency}
+            issueDate={formState.issueDate}
+            dueDate={formState.dueDate}
+            notes={formState.notes}
+            onChangeNotes={(val) => actions.updateField('notes', val)}
+          />
 
           {/* Card 6: Notes, Terms, and Custom Fields */}
           <div className="bg-white dark:bg-slate-900 border border-slate-200/60 dark:border-slate-800/80 rounded-xl p-5 shadow-sm space-y-6">

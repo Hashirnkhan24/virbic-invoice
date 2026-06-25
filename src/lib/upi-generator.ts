@@ -88,3 +88,51 @@ export async function generateQRCodeDataUrl(value: string, size = 150): Promise<
     return '';
   }
 }
+
+// ── NEW FUNCTIONS FOR UPI QR & INTENT FLOW ──
+
+export interface UPILinkParams {
+  upiId: string;        // e.g., "merchant@upi"
+  payeeName: string;    // Business name
+  amount: number;       // Invoice amount
+  description: string;  // e.g., "Invoice-1052"
+  transactionRef?: string; // Unique reference for tracking
+}
+
+export function generateUPIDeepLink(params: UPILinkParams): string {
+  const { upiId, payeeName, amount, description, transactionRef } = params;
+  
+  // UPI Intent URL format (RFC 7846)
+  const url = new URL('upi://pay');
+  url.searchParams.set('pa', upiId.trim());                   // Payee address
+  url.searchParams.set('pn', payeeName.trim());               // Payee name
+  url.searchParams.set('am', amount.toFixed(2));              // Amount
+  url.searchParams.set('cu', 'INR');                          // Currency
+  url.searchParams.set('tn', description.trim());             // Transaction note
+  if (transactionRef) {
+    url.searchParams.set('tr', transactionRef.trim());        // Transaction reference
+  }
+  
+  return url.toString();
+}
+
+export function generateUPIQRData(params: UPILinkParams): string {
+  // QR codes encode the same deep-link
+  return generateUPIDeepLink(params);
+}
+
+// Generate a unique transaction reference for UPI tracking
+export function generateUPITransactionRef(invoiceId: string): string {
+  const timestamp = Date.now().toString(36).toUpperCase();
+  const shortId = invoiceId.slice(-6).toUpperCase();
+  return `BC-${shortId}-${timestamp}`; // e.g., BC-A3F2B1-K8J9M2
+}
+
+// Validate UPI ID format (basic)
+export function validateUPIId(upiId: string): boolean {
+  // Format: identifier@handle
+  // handle must be at least 2 chars
+  const pattern = /^[a-zA-Z0-9._-]+@[a-zA-Z0-9]+$/;
+  return pattern.test(upiId) && upiId.length >= 5 && upiId.length <= 50;
+}
+

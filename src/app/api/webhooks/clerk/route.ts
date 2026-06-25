@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { Webhook } from 'svix';
 import { WebhookEvent } from '@clerk/nextjs/server';
 import { prisma } from '@/lib/prisma';
+import { DEFAULT_REMINDER_TEMPLATES } from '@/lib/reminder-defaults';
 
 export async function POST(req: NextRequest) {
   const webhookSecret = process.env.CLERK_WEBHOOK_SECRET;
@@ -78,7 +79,44 @@ export async function POST(req: NextRequest) {
         update: {},
       });
 
-      console.log(`✅ Created user ${clerkId} (${email}) and FREE subscription`);
+      // Seed default user preferences
+      await prisma.userPreference.upsert({
+        where: { userId: user.id },
+        create: {
+          userId: user.id,
+          confirmationChannel: 'both',
+          autoConfirmation: true,
+          includeReceiptPdf: true,
+        },
+        update: {},
+      });
+
+      // Seed default reminder templates for the user
+      for (const t of DEFAULT_REMINDER_TEMPLATES) {
+        await prisma.reminderTemplate.upsert({
+          where: {
+            userId_stage: {
+              userId: user.id,
+              stage: t.stage,
+            },
+          },
+          create: {
+            userId: user.id,
+            stage: t.stage,
+            tone: t.tone,
+            subject: t.subject,
+            body: t.body,
+            daysAfterDue: t.daysAfterDue,
+            daysAfterLast: t.daysAfterLast,
+            sendEmail: t.sendEmail,
+            generateWaMsg: t.generateWaMsg,
+            isDefault: false,
+          },
+          update: {},
+        });
+      }
+
+      console.log(`✅ Created user ${clerkId} (${email}), FREE subscription, and default reminder templates`);
     }
 
     else if (eventType === 'user.updated') {

@@ -4,6 +4,7 @@ import { notFound } from 'next/navigation';
 import { ShieldAlert } from 'lucide-react';
 import { prisma } from '@/lib/prisma';
 import InvoiceDetailsClient from '@/components/invoices/InvoiceDetailsClient';
+import { getInvoiceViewIntelligence } from '@/lib/view-intelligence';
 
 import { getAuthUser } from '@/lib/auth';
 import { redirect } from 'next/navigation';
@@ -79,6 +80,11 @@ export default async function InvoiceDetailsPage({
     createdAt: invoice.createdAt.toISOString(),
     updatedAt: invoice.updatedAt.toISOString(),
     
+    // Razorpay fields
+    razorpayPaymentLinkId: invoice.razorpayPaymentLinkId,
+    razorpayPaymentLinkUrl: invoice.razorpayPaymentLinkUrl,
+    razorpayPaymentLinkStatus: invoice.razorpayPaymentLinkStatus,
+    
     business: {
       name: invoice.business.name,
       gstin: invoice.business.gstin || undefined,
@@ -133,5 +139,33 @@ export default async function InvoiceDetailsPage({
     },
   };
 
-  return <InvoiceDetailsClient invoice={serializableInvoice} />;
+  // Fetch user's reminder templates
+  const reminderTemplates = await prisma.reminderTemplate.findMany({
+    where: { userId: user.id },
+    orderBy: { stage: 'asc' },
+  });
+
+  const serializableTemplates = reminderTemplates.map((t: any) => ({
+    id: t.id,
+    userId: t.userId,
+    stage: t.stage,
+    tone: t.tone,
+    subject: t.subject,
+    body: t.body,
+    daysAfterDue: t.daysAfterDue,
+    daysAfterLast: t.daysAfterLast,
+    sendEmail: t.sendEmail,
+    generateWaMsg: t.generateWaMsg,
+  }));
+
+  // Fetch view intelligence
+  const viewIntelligence = await getInvoiceViewIntelligence(invoice.id, user.id);
+
+  return (
+    <InvoiceDetailsClient 
+      invoice={serializableInvoice} 
+      reminderTemplates={serializableTemplates} 
+      viewIntelligence={viewIntelligence} 
+    />
+  );
 }

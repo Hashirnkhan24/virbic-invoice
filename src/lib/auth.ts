@@ -73,6 +73,44 @@ export async function getAuthUser() {
       update: {},
     });
 
+    // Seed default user preferences
+    await prisma.userPreference.upsert({
+      where: { userId: newUser.id },
+      create: {
+        userId: newUser.id,
+        confirmationChannel: 'both',
+        autoConfirmation: true,
+        includeReceiptPdf: true,
+      },
+      update: {},
+    });
+
+    // Seed default reminder templates
+    const { DEFAULT_REMINDER_TEMPLATES } = require('./reminder-defaults');
+    for (const t of DEFAULT_REMINDER_TEMPLATES) {
+      await prisma.reminderTemplate.upsert({
+        where: {
+          userId_stage: {
+            userId: newUser.id,
+            stage: t.stage,
+          },
+        },
+        create: {
+          userId: newUser.id,
+          stage: t.stage,
+          tone: t.tone,
+          subject: t.subject,
+          body: t.body,
+          daysAfterDue: t.daysAfterDue,
+          daysAfterLast: t.daysAfterLast,
+          sendEmail: t.sendEmail,
+          generateWaMsg: t.generateWaMsg,
+          isDefault: false,
+        },
+        update: {},
+      });
+    }
+
     return { error: null, dbUser: newUser, clerkUserId };
   }
 

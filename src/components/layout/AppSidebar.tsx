@@ -14,6 +14,7 @@ import {
   FileSpreadsheet,
   ChevronLeft,
   ChevronRight,
+  Inbox,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { cn } from '@/lib/utils';
@@ -48,6 +49,11 @@ export default function AppSidebar({
       href: '/invoices',
       icon: FileText,
       badge: invoicesCount > 0 ? invoicesCount : undefined,
+    },
+    {
+      label: 'Payments Inbox',
+      href: '/payments',
+      icon: Inbox,
     },
     {
       label: 'Clients',

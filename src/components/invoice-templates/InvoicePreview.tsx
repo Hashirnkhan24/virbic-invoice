@@ -1,22 +1,31 @@
 'use client';
 
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import { Maximize2, Sparkles } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { formatCurrency, formatDate } from '@/lib/helpers';
 import { InvoiceTemplateProps, LineItemData } from './types';
+import { toast } from 'sonner';
 
 import UPIQRCode from './shared/UPIQRCode';
 
 interface InvoicePreviewProps {
-  invoice: InvoiceTemplateProps['invoice'];
+  invoice: InvoiceTemplateProps['invoice'] & { 
+    paidAt?: string | null; 
+    status?: string;
+    razorpayPaymentLinkId?: string | null;
+    razorpayPaymentLinkUrl?: string | null;
+    razorpayPaymentLinkStatus?: string | null;
+    amountPaid?: number;
+  };
   totals: InvoiceTemplateProps['totals'];
   business: InvoiceTemplateProps['business'];
   client: InvoiceTemplateProps['client'];
   template?: string;
   className?: string;
+  asReceipt?: boolean;
 }
 
 export default function InvoicePreview({
@@ -26,8 +35,24 @@ export default function InvoicePreview({
   client,
   template = 'modern',
   className = '',
+  asReceipt = false,
 }: InvoicePreviewProps) {
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [isPublicClient, setIsPublicClient] = useState(false);
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      setIsPublicClient(window.location.pathname.startsWith('/i/'));
+      
+      const params = new URLSearchParams(window.location.search);
+      if (params.get('payment') === 'success') {
+        toast.success('Payment completed successfully! Your invoice status will be updated shortly.');
+        const url = new URL(window.location.href);
+        url.searchParams.delete('payment');
+        window.history.replaceState({}, '', url.pathname + url.search);
+      }
+    }
+  }, []);
 
   const allowedTemplates = ['modern', 'minimal', 'professional', 'creative', 'dark'];
   const templateCandidate = template || (invoice as Record<string, unknown>).template as string || 'modern';
@@ -147,12 +172,18 @@ export default function InvoicePreview({
             </div>
             <div className="text-right space-y-1">
               <span className="inline-block text-[9px] font-black text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded uppercase tracking-wider">
-                Tax Invoice
+                {asReceipt ? 'RECEIPT' : 'Tax Invoice'}
               </span>
-              <h1 className="text-xl font-black text-slate-950">{invoice.invoiceNumber || 'INV-000'}</h1>
+              <h1 className="text-xl font-black text-slate-950">
+                {asReceipt ? `RCT-${invoice.invoiceNumber || 'INV-000'}` : (invoice.invoiceNumber || 'INV-000')}
+              </h1>
               <div className="text-[10px] text-slate-500 space-y-0.5">
                 <p>Issue Date: <span className="font-semibold text-slate-800">{formatDate(invoice.issueDate)}</span></p>
-                <p>Due Date: <span className="font-semibold text-slate-800">{formatDate(invoice.dueDate)}</span></p>
+                {asReceipt ? (
+                  <p>Paid on: <span className="font-semibold text-slate-800">{formatDate(invoice.paidAt || invoice.dueDate)}</span></p>
+                ) : (
+                  <p>Due Date: <span className="font-semibold text-slate-800">{formatDate(invoice.dueDate)}</span></p>
+                )}
                 <p>Place of Supply: <span className="font-semibold text-slate-800">{placeOfSupplyText}</span></p>
               </div>
             </div>
@@ -333,12 +364,20 @@ export default function InvoicePreview({
           {/* Header */}
           <div className="flex justify-between items-end pb-4 border-b border-slate-800/80">
             <div>
-              <h1 className="text-xl font-bold text-slate-900 uppercase tracking-widest">INVOICE</h1>
-              <p className="text-[10px] text-slate-400 font-mono mt-0.5">{invoice.invoiceNumber || 'INV-000'}</p>
+              <h1 className="text-xl font-bold text-slate-900 uppercase tracking-widest">
+                {asReceipt ? 'RECEIPT' : 'INVOICE'}
+              </h1>
+              <p className="text-[10px] text-slate-400 font-mono mt-0.5">
+                {asReceipt ? `RCT-${invoice.invoiceNumber || 'INV-000'}` : (invoice.invoiceNumber || 'INV-000')}
+              </p>
             </div>
             <div className="text-right text-[10px] space-y-0.5">
               <p>Date: <span className="font-bold">{formatDate(invoice.issueDate)}</span></p>
-              <p>Due: <span className="font-bold">{formatDate(invoice.dueDate)}</span></p>
+              {asReceipt ? (
+                <p>Paid on: <span className="font-bold">{formatDate(invoice.paidAt || invoice.dueDate)}</span></p>
+              ) : (
+                <p>Due: <span className="font-bold">{formatDate(invoice.dueDate)}</span></p>
+              )}
             </div>
           </div>
 
@@ -449,12 +488,20 @@ export default function InvoicePreview({
           {/* Top Bar with Deep Navy Accent */}
           <div className="bg-slate-900 text-white p-4 rounded-lg flex justify-between items-center">
             <div>
-              <h1 className="text-base font-black tracking-widest uppercase">TAX INVOICE</h1>
-              <p className="text-[10px] font-mono text-slate-350">{invoice.invoiceNumber || 'INV-000'}</p>
+              <h1 className="text-base font-black tracking-widest uppercase">
+                {asReceipt ? 'RECEIPT' : 'TAX INVOICE'}
+              </h1>
+              <p className="text-[10px] font-mono text-slate-350">
+                {asReceipt ? `RCT-${invoice.invoiceNumber || 'INV-000'}` : (invoice.invoiceNumber || 'INV-000')}
+              </p>
             </div>
             <div className="text-right text-[10px] text-slate-300 font-medium">
               <p>Issue Date: {formatDate(invoice.issueDate)}</p>
-              <p>Due Date: {formatDate(invoice.dueDate)}</p>
+              {asReceipt ? (
+                <p>Paid on: {formatDate(invoice.paidAt || invoice.dueDate)}</p>
+              ) : (
+                <p>Due Date: {formatDate(invoice.dueDate)}</p>
+              )}
             </div>
           </div>
 
@@ -577,8 +624,12 @@ export default function InvoicePreview({
             </div>
             
             <div className="text-right">
-              <h1 className="text-lg font-black text-slate-950 uppercase tracking-wider bg-clip-text text-transparent bg-gradient-to-r from-violet-600 to-pink-600">INVOICE</h1>
-              <span className="font-mono text-xs font-bold text-slate-500">{invoice.invoiceNumber || 'INV-000'}</span>
+              <h1 className="text-lg font-black text-slate-950 uppercase tracking-wider bg-clip-text text-transparent bg-gradient-to-r from-violet-600 to-pink-600">
+                {asReceipt ? 'RECEIPT' : 'INVOICE'}
+              </h1>
+              <span className="font-mono text-xs font-bold text-slate-500">
+                {asReceipt ? `RCT-${invoice.invoiceNumber || 'INV-000'}` : (invoice.invoiceNumber || 'INV-000')}
+              </span>
             </div>
           </div>
 
@@ -592,7 +643,11 @@ export default function InvoicePreview({
             </div>
             <div className="text-right text-[10px] space-y-1 text-slate-500">
               <p>Drafted On: <span className="font-bold text-slate-800">{formatDate(invoice.issueDate)}</span></p>
-              <p>Due By: <span className="font-bold text-slate-800">{formatDate(invoice.dueDate)}</span></p>
+              {asReceipt ? (
+                <p>Paid On: <span className="font-bold text-slate-800">{formatDate(invoice.paidAt || invoice.dueDate)}</span></p>
+              ) : (
+                <p>Due By: <span className="font-bold text-slate-800">{formatDate(invoice.dueDate)}</span></p>
+              )}
               <p>Supply State: <span className="font-bold text-slate-800">{placeOfSupplyText}</span></p>
             </div>
           </div>
@@ -689,12 +744,16 @@ export default function InvoicePreview({
             </div>
             <div className="text-right space-y-1">
               <span className="inline-block text-[9px] font-black text-emerald-400 bg-emerald-950/40 border border-emerald-900/30 px-2 py-0.5 rounded uppercase tracking-wider">
-                Tax Invoice
+                {asReceipt ? 'Receipt' : 'Tax Invoice'}
               </span>
-              <h1 className="text-xl font-black text-white">{invoice.invoiceNumber || 'INV-000'}</h1>
+              <h1 className="text-xl font-black text-white">{asReceipt ? `RCT-${invoice.invoiceNumber || 'INV-000'}` : (invoice.invoiceNumber || 'INV-000')}</h1>
               <div className="text-[10px] text-slate-450 space-y-0.5 font-mono">
                 <p>Issue Date: {formatDate(invoice.issueDate)}</p>
-                <p>Due Date: {formatDate(invoice.dueDate)}</p>
+                {asReceipt ? (
+                  <p>Paid on: {formatDate(invoice.paidAt || invoice.dueDate)}</p>
+                ) : (
+                  <p>Due Date: {formatDate(invoice.dueDate)}</p>
+                )}
                 <p>Supply State: {placeOfSupplyText}</p>
               </div>
             </div>
@@ -802,6 +861,35 @@ export default function InvoicePreview({
     return null;
   };
 
+  const renderTemplateWithOverlay = () => {
+    return (
+      <div className="relative w-full h-full min-h-[inherit] flex flex-col justify-start">
+        {renderTemplateContent()}
+        {(asReceipt || invoice.status === 'PAID') && (
+          <div className="absolute top-[35%] left-[50%] -translate-x-1/2 -translate-y-1/2 pointer-events-none select-none z-[100] border-[6px] border-emerald-500/80 rounded-2xl px-6 py-3 uppercase tracking-widest text-emerald-500/80 font-black text-4xl rotate-[-25deg] shadow-lg shadow-emerald-500/10 bg-white/40 dark:bg-slate-950/40 backdrop-blur-[0.5px]">
+            PAID
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  const isINR = invoice.currency.toUpperCase() === 'INR';
+  const isUnpaid = ['SENT', 'PARTIAL', 'OVERDUE'].includes(invoice.status || '');
+  const showPayButton =
+    isPublicClient &&
+    isINR &&
+    isUnpaid &&
+    !asReceipt &&
+    !!invoice.razorpayPaymentLinkUrl &&
+    invoice.razorpayPaymentLinkStatus === 'created';
+
+  const handlePayNow = () => {
+    if (invoice.razorpayPaymentLinkUrl) {
+      window.location.href = invoice.razorpayPaymentLinkUrl;
+    }
+  };
+
   return (
     <div className={cn("relative flex flex-col h-full bg-slate-100 dark:bg-slate-900/40 rounded-2xl border border-slate-200/60 dark:border-slate-800/80 p-3 shadow-inner overflow-hidden", className)}>
       {/* Top action toolbar */}
@@ -825,8 +913,27 @@ export default function InvoicePreview({
 
       {/* Paper Container Mockup */}
       <div className="flex-1 overflow-y-auto rounded-xl border border-slate-200 dark:border-slate-850 shadow-md bg-white dark:bg-slate-950 min-h-[350px]">
-        {renderTemplateContent()}
+        {renderTemplateWithOverlay()}
       </div>
+
+      {/* Pay Now Button (Client Public Portal only) */}
+      {showPayButton && (
+        <div className="mt-3 p-4 bg-emerald-500/10 dark:bg-emerald-500/5 border border-emerald-500/20 rounded-xl flex flex-col items-center text-center gap-2">
+          <div className="flex items-center gap-1.5 text-emerald-600 dark:text-emerald-400 font-bold text-xs">
+            <Sparkles className="w-4 h-4 animate-pulse" />
+            <span>Online Payment Available</span>
+          </div>
+          <Button
+            onClick={handlePayNow}
+            className="w-full sm:w-auto px-8 h-10 font-black text-xs bg-emerald-600 hover:bg-emerald-500 text-white cursor-pointer shadow-md shadow-emerald-500/20 hover:shadow-emerald-500/30 transition-all rounded-lg"
+          >
+            Pay Balance ({formatCurrency(totals.grandTotal - (invoice.amountPaid || 0), invoice.currency)})
+          </Button>
+          <p className="text-[10px] text-slate-500 dark:text-slate-450 font-medium">
+            Secure payment powered by Razorpay. A 2% + GST transaction fee applies.
+          </p>
+        </div>
+      )}
 
       {/* FULL SCREEN MODAL */}
       <Dialog open={isFullscreen} onOpenChange={setIsFullscreen}>
@@ -840,8 +947,8 @@ export default function InvoicePreview({
             </DialogDescription>
           </DialogHeader>
 
-          <div className="w-full flex-1 rounded-xl shadow-xl border border-slate-250 dark:border-slate-800 bg-white dark:bg-slate-950 overflow-hidden">
-            {renderTemplateContent()}
+          <div className="w-full flex-1 rounded-xl shadow-xl border border-slate-250 dark:border-slate-800 bg-white dark:bg-slate-955 overflow-hidden">
+            {renderTemplateWithOverlay()}
           </div>
         </DialogContent>
       </Dialog>

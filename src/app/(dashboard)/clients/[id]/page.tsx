@@ -26,6 +26,8 @@ import {
   AlertTriangle,
   FileDown,
   ExternalLink,
+  Globe,
+  Loader2,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -61,6 +63,7 @@ export default function ClientDetailPage() {
   const [noteContent, setNoteContent] = useState('');
   const [noteSubmitting, setNoteSubmitting] = useState(false);
   const [copiedField, setCopiedField] = useState<string | null>(null);
+  const [creatingPortal, setCreatingPortal] = useState(false);
 
   // Modals & form state
   const [isEditOpen, setIsEditOpen] = useState(false);
@@ -249,6 +252,46 @@ export default function ClientDetailPage() {
   // Quick Action: Create invoice redirect
   const handleCreateInvoiceRedirect = () => {
     router.push(`/invoices?clientId=${id}`);
+  };
+
+  const handleCreatePortal = async () => {
+    setCreatingPortal(true);
+    try {
+      const res = await fetch(`/api/clients/${id}/portal`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+      });
+
+      if (!res.ok) {
+        throw new Error('Failed to create client portal');
+      }
+
+      const portal = await res.json();
+      toast.success('Client Portal created successfully!');
+      
+      // Update local state
+      setData(prev => {
+        if (!prev) return null;
+        return {
+          ...prev,
+          client: {
+            ...prev.client,
+            portal
+          }
+        };
+      });
+
+      // Copy link to clipboard
+      const appUrl = window.location.origin;
+      const portalUrl = `${appUrl}/portal/${portal.slug}`;
+      navigator.clipboard.writeText(portalUrl);
+      toast.success('Portal link copied to clipboard!');
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to create client portal');
+    } finally {
+      setCreatingPortal(false);
+    }
   };
 
   if (loading) {
@@ -702,6 +745,61 @@ export default function ClientDetailPage() {
                     <span>Call Client</span>
                   </Button>
                 </Link>
+              )}
+
+              {/* Client Portal Actions */}
+              {!client.isDeleted && (
+                <div className="border-t border-slate-100 dark:border-slate-800/60 pt-2.5 mt-1 flex flex-col gap-2">
+                  <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Client Portal</h4>
+                  {client.portal ? (
+                    <>
+                      <a 
+                        href={`/portal/${client.portal.slug}`} 
+                        target="_blank" 
+                        rel="noreferrer" 
+                        className="w-full"
+                      >
+                        <Button 
+                          variant="outline" 
+                          className="w-full text-slate-700 border-slate-200 dark:border-slate-805 dark:text-slate-300 font-semibold h-9 text-xs gap-1.5 rounded-lg cursor-pointer justify-start"
+                        >
+                          <Globe className="w-4 h-4 text-emerald-500" />
+                          <span>View Client Portal</span>
+                        </Button>
+                      </a>
+                      <Button
+                        onClick={() => {
+                          const appUrl = window.location.origin;
+                          navigator.clipboard.writeText(`${appUrl}/portal/${client.portal.slug}`);
+                          toast.success('Portal link copied to clipboard!');
+                        }}
+                        variant="ghost"
+                        className="w-full text-slate-500 hover:text-slate-850 dark:text-slate-400 dark:hover:text-slate-205 h-9 text-xs gap-1.5 rounded-lg cursor-pointer justify-start px-3"
+                      >
+                        <Copy className="w-3.5 h-3.5 text-slate-400" />
+                        <span>Copy Portal Link</span>
+                      </Button>
+                    </>
+                  ) : (
+                    <Button 
+                      onClick={handleCreatePortal}
+                      disabled={creatingPortal}
+                      className="w-full bg-slate-805 dark:bg-slate-700 hover:bg-slate-900 text-white font-bold h-9 text-xs gap-1.5 rounded-lg cursor-pointer justify-start"
+                    >
+                      {creatingPortal ? (
+                        <>
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                          <span>Creating Portal...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Globe className="w-4 h-4" />
+                          <span>Create Client Portal</span>
+                        </>
+                      )}
+                    </Button>
+                  )}
+                </div>
               )}
             </div>
           </div>

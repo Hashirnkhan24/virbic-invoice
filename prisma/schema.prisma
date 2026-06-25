@@ -13,6 +13,7 @@ model User {
   email         String    @unique
   name          String?
   avatar        String?
+  phone         String?   // WhatsApp bot interaction phone
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
   
@@ -33,6 +34,7 @@ model User {
   invoices      Invoice[]
   items         Item[]
   subscriptions Subscription?
+  preferences   UserPreference?
 }
 
 model Business {
@@ -109,8 +111,12 @@ model Client {
   updatedAt       DateTime  @updatedAt
   
   // Relations
-  user            User      @relation(fields: [userId], references: [id])
-  invoices        Invoice[]
+  user                  User                  @relation(fields: [userId], references: [id])
+  invoices              Invoice[]
+  reminderLogs          ReminderLog[]
+  portal                ClientPortal?
+  whatsAppConversations WhatsAppConversation[]
+
   
   @@index([userId])
 }
@@ -203,6 +209,17 @@ model Invoice {
   lastReminderAt    DateTime?
   reminderCount     Int      @default(0)
   reminders         InvoiceReminder[]
+  reminderLogs      ReminderLog[]
+  
+  // Razorpay payment link tracking
+  razorpayPaymentLinkId     String?   @unique
+  razorpayPaymentLinkUrl    String?
+  razorpayPaymentLinkStatus String?   @default("created")
+  
+  // UPI payment tracking
+  upiPaymentLink            String?
+  upiQrGeneratedAt          DateTime?
+  paymentProofs             PaymentProof[]
   
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
@@ -212,6 +229,8 @@ model Invoice {
   business          Business  @relation(fields: [businessId], references: [id])
   client            Client    @relation(fields: [clientId], references: [id])
   lineItems         InvoiceLineItem[]
+  payments          Payment[]
+  shareLog          InvoiceShareLog?
   
   @@index([userId])
   @@index([businessId])
@@ -336,3 +355,422 @@ model ClientNote {
   @@index([clientId])
   @@index([userId])
 }
+
+// NEW: Payment model — records individual payment transactions against an invoice
+model Payment {
+  id          String        @id @default(cuid())
+  invoiceId   String
+  userId      String        // Denormalized for security/ownership checks
+  
+  // Payment details
+  amount      Decimal       @db.Decimal(12, 2)
+  method      PaymentMethod @default(UPI)
+  reference   String?       // UTR number, transaction ID, check number
+  notes       String?       // "Advance payment", "Final settlement"
+  
+  // Status
+  status      PaymentStatus @default(CONFIRMED)
+  
+  // Gateway tracking (for future auto-reconciliation)
+  gatewayRef  String?       // Razorpay payment_id, etc.
+  gatewayName String?       // "razorpay", "stripe", "manual"
+  razorpayPaymentId String?
+  razorpayOrderId   String?
+  
+  // Link payment to proof
+  paymentProofId    String?   @unique
+  paymentProof      PaymentProof? @relation(fields: [paymentProofId], references: [id])
+  
+  // Timestamps
+  paidAt      DateTime      // When the payment was made (user-editable, default now)
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+  
+  // Relations
+  invoice     Invoice       @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  
+  @@index([invoiceId])
+  @@index([userId])
+  @@index([gatewayRef])
+}
+
+enum PaymentMethod {
+  UPI
+  NEFT
+  IMPS
+  RTGS
+  CASH
+  CHEQUE
+  CARD
+  OTHER
+}
+
+enum PaymentStatus {
+  PENDING    // Recorded but not yet confirmed
+  CONFIRMED  // Verified by user
+  FAILED     // Bounced check, failed transfer
+  REFUNDED   // Payment was refunded
+}
+
+// NEW: Reminder templates (user-configurable per escalation stage)
+model ReminderTemplate {
+  id             String   @id @default(cuid())
+  userId         String
+  
+  stage          Int      // 1=Polite, 2=Standard, 3=Firm, 4=Final
+  tone           String   // "polite", "standard", "firm", "final"
+  
+  subject        String
+  body           String   @db.Text
+  
+  // Stage configuration
+  daysAfterDue   Int      // Days after due date to send this reminder (0 = on due date)
+  daysAfterLast  Int      // Minimum days since last reminder
+  sendEmail      Boolean  @default(true)
+  generateWaMsg  Boolean  @default(true) // Generate WhatsApp message version
+  
+  isDefault      Boolean  @default(false) // System default templates (user can override)
+  
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  
+  @@unique([userId, stage]) // One template per stage per user
+  @@index([userId])
+}
+
+// NEW: Reminder log (audit trail of sent reminders)
+model ReminderLog {
+  id          String   @id @default(cuid())
+  invoiceId   String
+  userId      String
+  clientId    String
+  
+  stage       Int      // Which escalation stage was used
+  templateId  String?  // Reference to template used
+  
+  channel     String   // "email", "whatsapp", "both"
+  content     String   @db.Text // Actual content sent
+  
+  // If "viewed but not paid" triggered early escalation
+  triggeredBy String?  // "schedule", "viewed_not_paid"
+  
+  createdAt   DateTime @default(now())
+  
+  invoice     Invoice  @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  client      Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  
+  @@index([invoiceId])
+  @@index([userId])
+  @@index([clientId])
+}
+
+// User settings preferences for confirmation messages and receipts
+model UserPreference {
+  id                    String  @id @default(cuid())
+  userId                String  @unique
+  confirmationChannel   String  @default("both") // whatsapp, email, both
+  autoConfirmation      Boolean @default(true)
+  includeReceiptPdf     Boolean @default(true)
+  
+  // WhatsApp config (BYOC optional override)
+  whatsAppEnabled       Boolean @default(false)
+  whatsAppProvider      String  @default("twilio")
+  twilioAccountSid      String?
+  twilioAuthToken       String?
+  twilioWhatsAppNumber  String?
+  metaAccessToken       String?
+  metaPhoneNumberId     String?
+  
+  // Client Portal Defaults
+  portalEnabledDefault       Boolean @default(true)
+  portalAutoCreate           Boolean @default(true)
+  portalPasswordDefault      String?
+  portalUseBusinessBranding  Boolean @default(true)
+  portalBrandColorDefault    String  @default("#10b981")
+  portalTitleDefault         String?
+  portalShowPaidDefault      Boolean @default(true)
+  portalAllowPdfDefault      Boolean @default(true)
+  portalAllowPaymentDefault  Boolean @default(true)
+  portalShowHistoryDefault   Boolean @default(true)
+  
+  upiAutoApproveEnabled      Boolean @default(false)
+  upiAutoApproveHours        Int     @default(72)
+  
+  user                  User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// NEW: Client Portal configuration
+model ClientPortal {
+  id          String   @id @default(cuid())
+  clientId    String   @unique
+  userId      String   // Denormalized for security
+  
+  slug        String   @unique // e.g., "rstech", "acme-corp" — URL-friendly
+  password    String?  // Optional bcrypt-hashed password protection
+  
+  // Branding
+  brandColor  String   @default("#10b981") // Falls back to business brandColor
+  logoUrl     String?  // Falls back to business logo
+  title       String?  // e.g., "RS Tech Client Portal" — falls back to "{businessName} Portal"
+  
+  // Features
+  showPaidInvoices     Boolean @default(true)
+  allowPdfDownload     Boolean @default(true)
+  allowPayment         Boolean @default(true) // Requires Razorpay
+  showPaymentHistory   Boolean @default(true)
+  
+  // Settings
+  enabled     Boolean  @default(true)
+  expiresAt   DateTime? // Optional portal expiry
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  // Relations
+  client      Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  
+  @@index([slug])
+  @@index([userId])
+}
+
+// NEW: PaymentProof — stores client-submitted payment evidence
+model PaymentProof {
+  id              String       @id @default(cuid())
+  invoiceId       String
+  userId          String       // Denormalized for security
+  
+  // Payment proof data
+  utr             String?      // 12-digit UPI UTR number
+  screenshotUrl   String?      // Relative path to uploaded file (e.g. /uploads/proofs/...)
+  amountPaid      Decimal      @db.Decimal(12, 2)
+  
+  // Status
+  status          ProofStatus  @default(PENDING)
+  
+  // Metadata
+  submittedAt     DateTime     @default(now())
+  verifiedAt      DateTime?
+  verifiedBy      String?
+  rejectionReason String?
+  
+  // Auto-approval tracking
+  autoApproveAt   DateTime?
+  autoApproved    Boolean      @default(false)
+  
+  // Relations
+  invoice         Invoice      @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  payment         Payment?
+  
+  @@index([invoiceId])
+  @@index([userId])
+  @@index([status])
+  @@index([submittedAt])
+}
+
+enum ProofStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  AUTO_APPROVED
+}
+
+// NEW: Notification model
+model Notification {
+  id        String   @id @default(cuid())
+  userId    String
+  type      String
+  title     String
+  body      String
+  data      String?  // JSON string
+  read      Boolean  @default(false)
+  createdAt DateTime @default(now())
+  
+  @@index([userId])
+  @@index([read])
+}
+
+// NEW: Invoice share log (tracks views and engagement)
+model InvoiceShareLog {
+  id                String             @id @default(cuid())
+  shareId           String             @unique // The publicShareId from Invoice
+  invoiceId         String             @unique
+  
+  // View tracking
+  viewCount         Int                @default(0)
+  firstViewedAt     DateTime?
+  lastViewedAt      DateTime?
+  uniqueViewerCount Int                @default(0) // Based on hashed IP uniqueness
+  
+  // Payment correlation
+  viewedBeforePayment Boolean          @default(false)
+  viewsBeforePayment  Int                @default(0)
+  
+  // Device/browser analytics
+  lastDeviceType    String?            // mobile, desktop, tablet
+  lastBrowser       String?            // Chrome, Safari, etc.
+  lastCountry       String?            // IN, US, etc.
+  
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+  
+  // Relations
+  invoice           Invoice            @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  viewEvents        InvoiceViewEvent[]
+  
+  @@index([shareId])
+  @@index([invoiceId])
+}
+
+// NEW: Individual view events (for detailed analytics)
+model InvoiceViewEvent {
+  id          String   @id @default(cuid())
+  shareLogId  String
+  
+  viewedAt    DateTime @default(now())
+  ipHash      String?  // Hashed IP
+  deviceType  String?
+  browser     String?
+  country     String?
+  referrer    String?  // E.g. WhatsApp, Email, Direct
+  
+  // Relations
+  shareLog    InvoiceShareLog @relation(fields: [shareLogId], references: [id], onDelete: Cascade)
+  
+  @@index([shareLogId])
+  @@index([viewedAt])
+}
+
+// NEW: WhatsApp conversation tracking per freelancer-client pair
+model WhatsAppConversation {
+  id              String   @id @default(cuid())
+  userId          String   // The freelancer (BillCraft user)
+  clientId        String   // The freelancer's client
+  clientPhone     String   // Normalized E.164: +91XXXXXXXXXX
+  
+  // State management
+  status          String   @default("ACTIVE") // ACTIVE, OPTED_OUT, BLOCKED
+  lastMessageAt   DateTime?
+  messageCount    Int      @default(0)
+  
+  // Opt-in compliance (WhatsApp mandatory)
+  optInStatus     String   @default("PENDING") // PENDING, CONFIRMED, DECLINED
+  optInAt         DateTime?
+  optInMethod     String?  // "invoice_delivery", "manual", "qr_scan"
+  
+  // Context for AI conversations (stored as JSON, migrated to Redis in Phase 3)
+  conversationContext Json? @default("{}")
+  
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  
+  client          Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  messages        WhatsAppMessage[]
+  
+  @@unique([userId, clientPhone])
+  @@index([userId])
+  @@index([clientPhone])
+  @@index([optInStatus])
+}
+
+model WhatsAppMessage {
+  id              String   @id @default(cuid())
+  conversationId  String
+  
+  direction       String   // INBOUND (client→system), OUTBOUND (system→client)
+  messageType     String   // TEXT, IMAGE, DOCUMENT, VOICE, TEMPLATE, INTERACTIVE
+  content         String   @db.Text
+  mediaUrl        String?
+  
+  // Provider tracking
+  providerMessageId String?  // Twilio SID or Meta message ID
+  deliveryStatus  String   @default("SENT") // SENT, DELIVERED, READ, FAILED
+  
+  // AI processing
+  aiProcessed     Boolean  @default(false)
+  aiIntent        String?  // Classified intent (filled by AI layer in Phase 2)
+  aiConfidence    Float?
+  
+  // Raw payload for debugging
+  rawPayload      String?  @db.Text
+  
+  createdAt       DateTime @default(now())
+  
+  conversation    WhatsAppConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  
+  @@index([conversationId])
+  @@index([createdAt])
+  @@index([aiProcessed])
+}
+
+// NEW: System template registry for outbound messages
+model WhatsAppTemplate {
+  id          String   @id @default(cuid())
+  userId      String?  // NULL = system template, otherwise user custom
+  name        String   @unique // e.g., "invoice_delivered", "payment_reminder_stage_1"
+  category    String   // UTILITY, MARKETING (WhatsApp categories)
+  language    String   @default("en")
+  content     String   @db.Text
+  variables   String[] // ["clientName", "invoiceNumber", "amount", "dueDate"]
+  
+  isSystem    Boolean  @default(false)
+  isActive    Boolean  @default(true)
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  @@index([userId])
+  @@index([name])
+}
+
+// NEW: AI action log for training, debugging, audit
+model AIActionLog {
+  id              String   @id @default(cuid())
+  userId          String?  // NULL for client-side actions
+  clientId        String?  // For client-side actions
+  
+  rawInput        String   @db.Text
+  inputType       String   @default("TEXT") // TEXT, VOICE
+  language        String?  // Detected: en, hi, hinglish
+  
+  parsedIntent    String
+  parsedEntities  Json
+  confidence      Float
+  missingFields   String[]
+  
+  actionTaken     String   // What the system did
+  actionResult    Json?    // Success/failure details
+  
+  conversationTurn Int     @default(1)
+  sessionId       String
+  
+  processingTimeMs Int      // Performance tracking
+  
+  error           String?
+  createdAt       DateTime @default(now())
+  
+  @@index([userId])
+  @@index([clientId])
+  @@index([sessionId])
+  @@index([createdAt])
+}
+
+// NEW: Pending confirmations (for confirmation loop state)
+model PendingConfirmation {
+  id              String   @id @default(cuid())
+  sessionId       String   @unique
+  
+  actionType      String   // CREATE_INVOICE, MARK_PAID, etc.
+  draftData       Json     // The proposed action data
+  
+  expiresAt       DateTime // 10 minutes from creation
+  confirmedAt     DateTime?
+  cancelledAt     DateTime?
+  
+  createdAt       DateTime @default(now())
+  
+  @@index([sessionId])
+  @@index([expiresAt])
+}
+
+
+

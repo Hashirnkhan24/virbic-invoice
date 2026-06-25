@@ -249,6 +249,17 @@ export async function POST(request: NextRequest) {
         )
       );
 
+      // Auto-create portals for bulk imported clients if configured
+      const preferences = await prisma.userPreference.findUnique({
+        where: { userId: user.id }
+      });
+      if (!preferences || preferences.portalAutoCreate) {
+        const { autoCreatePortal } = await import('@/lib/portal-utils');
+        await Promise.all(
+          createdClients.map((c) => autoCreatePortal(c.id, user.id))
+        );
+      }
+
       return NextResponse.json({ clients: createdClients }, { status: 201 });
     }
 
@@ -273,6 +284,15 @@ export async function POST(request: NextRequest) {
         userId: user.id,
       },
     });
+
+    // Auto-create portal if configured
+    const preferences = await prisma.userPreference.findUnique({
+      where: { userId: user.id }
+    });
+    if (!preferences || preferences.portalAutoCreate) {
+      const { autoCreatePortal } = await import('@/lib/portal-utils');
+      await autoCreatePortal(client.id, user.id);
+    }
 
     return NextResponse.json({ client }, { status: 201 });
   } catch (error: any) {

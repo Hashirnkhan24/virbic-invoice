@@ -255,3 +255,109 @@ export async function sendInvoiceEmail(
   };
 }
 
+export async function sendReceiptEmail(options: {
+  to: string;
+  subject: string;
+  htmlBody: string;
+  fromName: string;
+  replyToEmail: string;
+  attachments?: Array<{ filename: string; content: Buffer }>;
+}): Promise<{ success: boolean; messageId: string }> {
+  const { to, subject, htmlBody, fromName, replyToEmail, attachments = [] } = options;
+  const resendApiKey = process.env.RESEND_API_KEY;
+  const smtpHost = process.env.SMTP_HOST;
+  const smtpPort = process.env.SMTP_PORT;
+  const smtpUser = process.env.SMTP_USER;
+  const smtpPass = process.env.SMTP_PASS;
+
+  const systemFromEmail = process.env.SMTP_FROM_EMAIL || 'onboarding@resend.dev';
+  const fromEmail = systemFromEmail;
+
+  // Deliver via Resend
+  if (resendApiKey) {
+    try {
+      const res = await fetch('https://api.resend.com/emails', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${resendApiKey}`,
+        },
+        body: JSON.stringify({
+          from: `${fromName} <${fromEmail}>`,
+          to: [to],
+          subject: subject,
+          html: htmlBody,
+          reply_to: replyToEmail,
+          attachments: attachments.map((att) => ({
+            filename: att.filename,
+            content: Buffer.from(att.content).toString('base64'),
+          })),
+        }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.message || 'Failed to send email via Resend API');
+      }
+
+      console.log(`[EMAIL SERVICE] Receipt email sent via Resend API. MsgID: ${data.id}`);
+      return { success: true, messageId: data.id };
+    } catch (resendError: any) {
+      console.error('[EMAIL SERVICE] Resend API error for receipt, trying SMTP:', resendError.message);
+    }
+  }
+
+  // Deliver via SMTP
+  if (smtpHost && smtpUser && smtpPass) {
+    try {
+      const secure = process.env.SMTP_SECURE === 'true' || smtpPort === '465';
+      const transporter = nodemailer.createTransport({
+        host: smtpHost,
+        port: parseInt(smtpPort || '587', 10),
+        secure,
+        auth: {
+          user: smtpUser,
+          pass: smtpPass,
+        },
+      });
+
+      const info = await transporter.sendMail({
+        from: `"${fromName}" <${fromEmail}>`,
+        to,
+        subject,
+        html: htmlBody,
+        replyTo: replyToEmail,
+        attachments: attachments.map((att) => ({
+          filename: att.filename,
+          content: Buffer.from(att.content),
+        })),
+      });
+
+      console.log(`[EMAIL SERVICE] Receipt email sent via SMTP. MsgID: ${info.messageId}`);
+      return { success: true, messageId: info.messageId };
+    } catch (smtpError: any) {
+      console.error('[EMAIL SERVICE] SMTP delivery failed for receipt:', smtpError.message);
+      throw new Error(`Email sending failed: ${smtpError.message}`);
+    }
+  }
+
+  // Fallback mock log
+  console.log('=== EMAIL SERVICE MOCK RECEIPT (NOT CONFIGURED) ===');
+  console.log(`To: ${to}`);
+  console.log(`From: "${fromName}" <${fromEmail}>`);
+  console.log(`Subject: ${subject}`);
+  console.log(`HTML Message:\n${htmlBody}`);
+  if (attachments.length > 0) {
+    console.log(`Attachment: ${attachments[0].filename} (${attachments[0].content.length} bytes)`);
+  }
+  console.log('==================================================');
+
+  await new Promise((resolve) => setTimeout(resolve, 800));
+
+  return {
+    success: true,
+    messageId: `mock-msg-${Math.random().toString(36).substring(2, 11)}`,
+  };
+}
+
+

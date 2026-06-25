@@ -5,11 +5,14 @@ import { prisma } from '@/lib/prisma';
 import InvoicePreview from '@/components/invoice-templates/InvoicePreview';
 import PasswordForm from '@/components/invoices/PasswordForm';
 import PublicDownloadButton from '@/components/invoices/PublicDownloadButton';
+import PublicUPIPayment from '@/components/payments/PublicUPIPayment';
 import { formatDate } from '@/lib/helpers';
+import { headers } from 'next/headers';
+import { trackInvoiceView } from '@/lib/view-intelligence';
 
 interface PublicSharePageProps {
   params: Promise<{ shareId: string }>;
-  searchParams: Promise<{ p?: string }>;
+  searchParams: Promise<{ p?: string; receipt?: string }>;
 }
 
 /**
@@ -31,12 +34,13 @@ export async function generateMetadata({ params }: { params: Promise<{ shareId: 
     }
 
     return {
-      title: `Invoice ${invoice.invoiceNumber} — ${invoice.business.name}`,
-      description: `View tax invoice ${invoice.invoiceNumber} issued by ${invoice.business.name}. Download print-ready PDF version.`,
+      title: `Invoice #${invoice.invoiceNumber} | ${invoice.business.name}`,
+      description: `View and download invoice #${invoice.invoiceNumber} from ${invoice.business.name}.`,
     };
-  } catch (error) {
+  } catch (err) {
     return {
-      title: 'View Invoice | Virbic Invoice',
+      title: 'Invoice | Virbic Invoice',
+      description: 'View your invoice online.',
     };
   }
 }
@@ -46,7 +50,8 @@ export async function generateMetadata({ params }: { params: Promise<{ shareId: 
  */
 export default async function PublicSharePage({ params, searchParams }: PublicSharePageProps) {
   const { shareId } = await params;
-  const { p: passwordQuery } = await searchParams;
+  const { p: passwordQuery, receipt } = await searchParams;
+  const asReceipt = receipt === '1';
 
   // Retrieve invoice with business, client and line items
   const invoice = await prisma.invoice.findFirst({
@@ -64,23 +69,22 @@ export default async function PublicSharePage({ params, searchParams }: PublicSh
 
   // 1. Password Protection Check
   if (invoice.sharePassword) {
-    if (!passwordQuery || passwordQuery !== invoice.sharePassword) {
+    const enteredPassword = passwordQuery || '';
+    if (enteredPassword !== invoice.sharePassword) {
       return (
-        <PasswordForm
-          shareId={shareId}
-          errorMsg={passwordQuery ? 'Incorrect password. Access denied.' : undefined}
-        />
+        <div className="min-h-screen bg-slate-50 dark:bg-slate-950 flex items-center justify-center p-4">
+          <PasswordForm
+            shareId={shareId}
+            errorMsg={enteredPassword ? 'Incorrect password. Access denied.' : undefined}
+          />
+        </div>
       );
     }
   }
 
-  // 2. Increment view count in database on access
-  await prisma.invoice.update({
-    where: { id: invoice.id },
-    data: {
-      viewCount: { increment: 1 },
-    },
-  });
+  // 2. Increment view count in database on access (handled asynchronously via trackInvoiceView)
+  const headersList = await headers();
+  trackInvoiceView(shareId, headersList).catch((err) => console.error('Failed to track view:', err));
 
   // 3. Serialize Decimal & Date fields for client-side InvoicePreview
   const serializableInvoice = {
@@ -106,6 +110,10 @@ export default async function PublicSharePage({ params, searchParams }: PublicSh
     cessTotal: Number(invoice.cessTotal),
     roundOff: Number(invoice.roundOff),
     grandTotal: Number(invoice.grandTotal),
+    amountPaid: Number(invoice.amountPaid),
+    razorpayPaymentLinkId: invoice.razorpayPaymentLinkId,
+    razorpayPaymentLinkUrl: invoice.razorpayPaymentLinkUrl,
+    razorpayPaymentLinkStatus: invoice.razorpayPaymentLinkStatus,
     viewCount: invoice.viewCount + 1, // Add current view
     
     business: {
@@ -162,6 +170,9 @@ export default async function PublicSharePage({ params, searchParams }: PublicSh
     grandTotal: serializableInvoice.grandTotal,
   };
 
+  const isUnpaid = ['SENT', 'PARTIAL', 'OVERDUE'].includes(serializableInvoice.status);
+  const hasUpi = !!serializableInvoice.business.upiId;
+
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-950 pb-16">
       {/* ── Top Bar ── */}
@@ -178,7 +189,7 @@ export default async function PublicSharePage({ params, searchParams }: PublicSh
           
           <div className="flex items-center gap-3">
             {invoice.sharePassword && (
-              <div className="hidden sm:flex items-center gap-1 text-[10px] font-bold text-slate-450 bg-slate-150/50 dark:bg-slate-800 px-2.5 py-1 rounded-md">
+              <div className="hidden sm:flex items-center gap-1 text-[10px] font-bold text-slate-455 bg-slate-150/50 dark:bg-slate-800 px-2.5 py-1 rounded-md">
                 <ShieldCheck className="w-3.5 h-3.5 text-emerald-500" />
                 <span>Secure Link</span>
               </div>
@@ -187,6 +198,7 @@ export default async function PublicSharePage({ params, searchParams }: PublicSh
               shareId={shareId}
               password={invoice.sharePassword || undefined}
               invoiceNumber={serializableInvoice.invoiceNumber}
+              asReceipt={asReceipt}
             />
           </div>
         </div>
@@ -201,8 +213,21 @@ export default async function PublicSharePage({ params, searchParams }: PublicSh
             business={serializableInvoice.business}
             client={serializableInvoice.client}
             template={serializableInvoice.template}
+            asReceipt={asReceipt}
           />
         </div>
+
+        {isUnpaid && !asReceipt && hasUpi && (
+          <PublicUPIPayment
+            invoiceId={serializableInvoice.id}
+            invoiceNumber={serializableInvoice.invoiceNumber.toString()}
+            balanceDue={serializableInvoice.grandTotal - serializableInvoice.amountPaid}
+            currency={serializableInvoice.currency}
+            upiId={serializableInvoice.business.upiId!}
+            payeeName={serializableInvoice.business.name}
+            shareId={shareId}
+          />
+        )}
         
         {/* Footnote branding */}
         <p className="text-[10px] text-center text-slate-400 mt-6 font-semibold">

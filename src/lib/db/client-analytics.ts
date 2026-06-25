@@ -1,4 +1,5 @@
 import { prisma } from '@/lib/prisma';
+import { convertCurrency } from '@/lib/currency';
 
 // Compute real-time client financials from invoices
 export async function getClientFinancials(clientId: string, userId: string, businessId?: string) {
@@ -12,19 +13,19 @@ export async function getClientFinancials(clientId: string, userId: string, busi
     ? { clientId, userId, businessId }
     : { clientId, userId };
 
-  const [paidAgg, outstandingAgg, totalInvoices, lastInvoice] = await Promise.all([
-    // Total PAID amount
-    prisma.invoice.aggregate({
-      where: { ...baseWhere, status: 'PAID' },
-      _sum: { grandTotal: true }
-    }),
-    // Total outstanding (SENT + OVERDUE + PARTIAL)
-    prisma.invoice.aggregate({
-      where: { 
-        ...baseWhere, 
-        status: { in: ['SENT', 'OVERDUE', 'PARTIAL'] } 
+  const [invoices, totalInvoices, lastInvoice] = await Promise.all([
+    // Fetch all non-draft, non-cancelled invoices for summing billed and outstanding
+    prisma.invoice.findMany({
+      where: {
+        ...baseWhere,
+        status: { notIn: ['DRAFT', 'CANCELLED'] }
       },
-      _sum: { grandTotal: true }
+      select: {
+        grandTotal: true,
+        amountPaid: true,
+        currency: true,
+        status: true
+      }
     }),
     // Total invoice count
     prisma.invoice.count({
@@ -38,8 +39,21 @@ export async function getClientFinancials(clientId: string, userId: string, busi
     })
   ]);
 
-  const totalBilled = paidAgg._sum.grandTotal ? Number(paidAgg._sum.grandTotal) : 0;
-  const totalOutstanding = outstandingAgg._sum.grandTotal ? Number(outstandingAgg._sum.grandTotal) : 0;
+  let totalBilled = 0;
+  let totalOutstanding = 0;
+
+  for (const inv of invoices) {
+    const grandTotalINR = convertCurrency(Number(inv.grandTotal), inv.currency, 'INR');
+    const amountPaidINR = convertCurrency(Number(inv.amountPaid), inv.currency, 'INR');
+    
+    // totalBilled is revenue collected (sum of amountPaid across all client invoices)
+    totalBilled += amountPaidINR;
+
+    // totalOutstanding is grandTotal - amountPaid across outstanding invoices (SENT, OVERDUE, PARTIAL)
+    if (['SENT', 'OVERDUE', 'PARTIAL'].includes(inv.status)) {
+      totalOutstanding += Math.max(0, grandTotalINR - amountPaidINR);
+    }
+  }
 
   return {
     totalBilled,

@@ -19,11 +19,20 @@ import {
   Sparkles,
   Edit2,
   Send,
+  Eye,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
+import {
+  ResponsiveContainer,
+  AreaChart,
+  Area,
+  XAxis,
+  YAxis,
+  Tooltip,
+} from 'recharts';
 import {
   Dialog,
   DialogContent,
@@ -38,83 +47,75 @@ import DeliveryActions from './DeliveryActions';
 import StatusBadge from '@/components/shared/StatusBadge';
 import ReminderHistory from './ReminderHistory';
 import { formatCurrency, formatDate } from '@/lib/helpers';
+import PaymentPanel from './PaymentPanel';
+import SendReminderButton from './SendReminderButton';
 
 interface InvoiceDetailsClientProps {
   invoice: any; // Serialized invoice object
+  reminderTemplates?: any[];
+  viewIntelligence?: any;
 }
 
-export default function InvoiceDetailsClient({ invoice: initialInvoice }: InvoiceDetailsClientProps) {
+export default function InvoiceDetailsClient({ 
+  invoice: initialInvoice,
+  reminderTemplates = [],
+  viewIntelligence,
+}: InvoiceDetailsClientProps) {
   const router = useRouter();
   const [invoice, setInvoice] = useState(initialInvoice);
 
-  // ── Modals & Actions Loading ──
-  const [isPaidDialogOpen, setIsPaidDialogOpen] = useState(false);
+  const [isRecordPaymentOpen, setIsRecordPaymentOpen] = useState(false);
   const [isCancelDialogOpen, setIsCancelDialogOpen] = useState(false);
   const [isDuplicating, setIsDuplicating] = useState(false);
-  const [isSendingReminder, setIsSendingReminder] = useState(false);
+  const [isAnalyticsOpen, setIsAnalyticsOpen] = useState(false);
 
-  // ── Payment Form State ──
-  const [amountPaidInput, setAmountPaidInput] = useState(
-    String(invoice.grandTotal - invoice.amountPaid)
-  );
-  const [paymentDate, setPaymentDate] = useState(new Date().toISOString().split('T')[0]);
-  const [paymentNotes, setPaymentNotes] = useState('');
-  const [isSubmittingPayment, setIsSubmittingPayment] = useState(false);
+  const getChartData = () => {
+    if (!viewIntelligence || !viewIntelligence.viewEvents) return [];
+    
+    // Group last 30 days
+    const days: Record<string, number> = {};
+    const now = new Date();
+    for (let i = 29; i >= 0; i--) {
+      const d = new Date(now.getFullYear(), now.getMonth(), now.getDate() - i);
+      const dateStr = d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
+      days[dateStr] = 0;
+    }
+    
+    viewIntelligence.viewEvents.forEach((e: any) => {
+      const dateStr = new Date(e.viewedAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
+      if (days[dateStr] !== undefined) {
+        days[dateStr]++;
+      }
+    });
+    
+    return Object.entries(days).map(([date, count]) => ({
+      date,
+      Views: count
+    }));
+  };
+
+  const refetchInvoice = async () => {
+    try {
+      const res = await fetch(`/api/invoices/${invoice.id}`);
+      if (res.ok) {
+        const data = await res.json();
+        setInvoice((prev: any) => ({
+          ...data.invoice,
+          reminders: prev.reminders
+        }));
+      }
+    } catch (err) {
+      console.error('Failed to refetch invoice details:', err);
+    }
+  };
 
   // ── Cancellation Form State ──
   const [cancelReason, setCancelReason] = useState('');
   const [isSubmittingCancel, setIsSubmittingCancel] = useState(false);
 
-  // ── Reminder Dialog State ──
-  const [isReminderDialogOpen, setIsReminderDialogOpen] = useState(false);
-  const [reminderSubject, setReminderSubject] = useState('');
-  const [reminderMessage, setReminderMessage] = useState('');
-
   const outstanding = invoice.grandTotal - invoice.amountPaid;
   const isUnpaid = invoice.status === 'SENT' || invoice.status === 'PARTIAL' || invoice.status === 'OVERDUE';
   const progressPercent = Math.min(100, Math.max(0, (invoice.amountPaid / invoice.grandTotal) * 100));
-
-  // ── 1. Mark as Paid API Call ──
-  const handleMarkPaidSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const parsedAmount = parseFloat(amountPaidInput);
-    if (isNaN(parsedAmount) || parsedAmount <= 0) {
-      toast.error('Please enter a valid amount.');
-      return;
-    }
-
-    setIsSubmittingPayment(true);
-    try {
-      const newAmountPaid = invoice.amountPaid + parsedAmount;
-      const isFullyPaid = newAmountPaid >= invoice.grandTotal;
-      const targetStatus = isFullyPaid ? 'PAID' : 'PARTIAL';
-
-      const res = await fetch(`/api/invoices/${invoice.id}/status`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          status: targetStatus,
-          amountPaid: newAmountPaid,
-          paidAt: new Date(paymentDate).toISOString(),
-          paymentNotes: paymentNotes.trim() || `Recorded payment of ${formatCurrency(parsedAmount)}`,
-        }),
-      });
-
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Failed to update status');
-
-      // Update local state
-      setInvoice(data.invoice);
-      toast.success(isFullyPaid ? 'Invoice fully marked as Paid!' : 'Recorded partial payment.');
-      setIsPaidDialogOpen(false);
-      router.refresh();
-    } catch (err: any) {
-      console.error(err);
-      toast.error(err.message || 'Failed to record payment.');
-    } finally {
-      setIsSubmittingPayment(false);
-    }
-  };
 
   // ── 2. Cancel Invoice API Call ──
   const handleCancelSubmit = async (e: React.FormEvent) => {
@@ -166,97 +167,6 @@ export default function InvoiceDetailsClient({ invoice: initialInvoice }: Invoic
       toast.error(err.message || 'Failed to duplicate invoice.');
     } finally {
       setIsDuplicating(false);
-    }
-  };
-
-  // ── 4. Send Reminder Preview & Submit ──
-  const openReminderDialog = () => {
-    const amountStr = formatCurrency(outstanding, invoice.currency);
-    const today = new Date();
-    const dueDateObj = new Date(invoice.dueDate);
-    const daysOverdue = Math.floor((today.getTime() - dueDateObj.getTime()) / (1000 * 60 * 60 * 24));
-    const shareLink = typeof window !== 'undefined'
-      ? `${window.location.origin}/i/${invoice.publicShareId}`
-      : `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/i/${invoice.publicShareId}`;
-
-    const replacements: { [key: string]: string } = {
-      number: String(invoice.invoiceNumber),
-      amount: amountStr,
-      client_name: invoice.client.name || 'Client',
-      due_date: formatDate(invoice.dueDate),
-      days_overdue: String(daysOverdue > 0 ? daysOverdue : 0),
-      share_link: shareLink,
-      business_name: invoice.business.name,
-    };
-
-    const replaceTokens = (text: string) => {
-      let res = text;
-      for (const [k, v] of Object.entries(replacements)) {
-        const regex = new RegExp(`\\{${k}\\}`, 'gi');
-        res = res.replace(regex, v);
-      }
-      return res;
-    };
-
-    const subjectTemplate = invoice.user?.reminderSubjectTemplate || "Reminder: Invoice {number} for {amount} is overdue";
-    const bodyTemplate = invoice.user?.reminderBodyTemplate || `Dear {client_name},
-
-This is a polite reminder that invoice {number} is currently overdue.
-An outstanding balance of {amount} remains unpaid.
-
-Invoice Details:
-- Number: {number}
-- Due Date: {due_date}
-- Days Overdue: {days_overdue} days
-
-You can view the invoice details and complete your payment online using the direct link below:
-{share_link}
-
-If you have already processed the payment, please ignore this email.
-
-Sincerely,
-{business_name}`;
-
-    setReminderSubject(replaceTokens(subjectTemplate));
-    setReminderMessage(replaceTokens(bodyTemplate));
-    setIsReminderDialogOpen(true);
-  };
-
-  const handleSendReminderSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setIsSendingReminder(true);
-    try {
-      const emailTo = invoice.client.email;
-      if (!emailTo) {
-        toast.error('Client does not have an email registered.');
-        return;
-      }
-
-      const res = await fetch(`/api/invoices/${invoice.id}/email`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          to: emailTo,
-          subject: reminderSubject.trim(),
-          message: reminderMessage.trim(),
-          isReminder: true,
-        }),
-      });
-
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Failed to send reminder email');
-
-      toast.success('Payment reminder email sent successfully!');
-      if (data.invoice) {
-        setInvoice(data.invoice);
-      }
-      setIsReminderDialogOpen(false);
-      router.refresh();
-    } catch (err: any) {
-      console.error(err);
-      toast.error(err.message || 'Failed to send reminder.');
-    } finally {
-      setIsSendingReminder(false);
     }
   };
 
@@ -328,7 +238,7 @@ Sincerely,
         <h3 className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest">
           Delivery & Copy Actions
         </h3>
-        <DeliveryActions invoice={invoice} />
+        <DeliveryActions invoice={invoice} onUpdate={refetchInvoice} />
       </div>
 
       {/* ── Main content grid: Preview vs Sidebar ── */}
@@ -360,27 +270,19 @@ Sincerely,
             <div className="flex flex-col gap-2.5">
               {/* Send Reminder (only if unpaid status) */}
               {isUnpaid && (
-                <Button
-                  onClick={openReminderDialog}
-                  disabled={isSendingReminder}
-                  className="w-full h-9 font-bold text-xs bg-slate-900 hover:bg-slate-850 text-white cursor-pointer"
-                >
-                  {isSendingReminder ? (
-                    <Loader2 className="w-3.5 h-3.5 animate-spin mr-2" />
-                  ) : (
-                    <Mail className="w-3.5 h-3.5 mr-2 text-emerald-400" />
-                  )}
-                  <span>Send Payment Reminder</span>
-                </Button>
+                <SendReminderButton 
+                  invoice={invoice} 
+                  reminderTemplates={reminderTemplates} 
+                  onReminderSent={(updatedInvoice) => {
+                    setInvoice(updatedInvoice);
+                  }}
+                />
               )}
 
               {/* Mark as paid (unpaid only) */}
               {invoice.status !== 'PAID' && invoice.status !== 'CANCELLED' && (
                 <Button
-                  onClick={() => {
-                    setAmountPaidInput(String(outstanding));
-                    setIsPaidDialogOpen(true);
-                  }}
+                  onClick={() => setIsRecordPaymentOpen(true)}
                   className="w-full h-9 font-bold text-xs bg-emerald-500 hover:bg-emerald-600 text-white cursor-pointer"
                 >
                   <Coins className="w-3.5 h-3.5 mr-2" />
@@ -402,62 +304,84 @@ Sincerely,
             </div>
           </Card>
 
-          {/* 2. Payment Status Card */}
-          <Card className="p-5 border border-slate-200/60 dark:border-slate-800/85 bg-white dark:bg-slate-900 rounded-xl shadow-xs text-left space-y-4">
-            <h4 className="text-xs font-black text-slate-800 dark:text-slate-250 uppercase tracking-wider pb-1.5 border-b border-slate-100 dark:border-slate-850">
-              Payment Status
-            </h4>
+          {/* 2. Payment Status Panel */}
+          <PaymentPanel
+            invoice={invoice}
+            onPaymentChange={refetchInvoice}
+            isRecordOpen={isRecordPaymentOpen}
+            onRecordOpenChange={setIsRecordPaymentOpen}
+          />
 
-            <div className="space-y-3.5">
-              {/* Progress bar */}
-              <div className="space-y-1">
-                <div className="flex justify-between text-xs font-semibold">
-                  <span className="text-slate-500">Collected</span>
-                  <span className="text-slate-850 dark:text-slate-100">{progressPercent.toFixed(0)}%</span>
-                </div>
-                <div className="w-full h-2 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
-                  <div
-                    className="h-full bg-emerald-500 rounded-full transition-all duration-500"
-                    style={{ width: `${progressPercent}%` }}
-                  />
-                </div>
-              </div>
+          {/* View Intelligence Card */}
+          {invoice.publicShareId && viewIntelligence && (
+            <Card className="p-5 border border-slate-200/60 dark:border-slate-800/85 bg-white dark:bg-slate-900 rounded-xl shadow-xs text-left space-y-4">
+              <h4 className="text-xs font-black text-slate-800 dark:text-slate-250 uppercase tracking-wider pb-1.5 border-b border-slate-100 dark:border-slate-850 flex items-center justify-between">
+                <span>View Intelligence</span>
+                <Eye className="w-3.5 h-3.5 text-slate-400" />
+              </h4>
 
-              {/* Summary Numbers */}
-              <div className="grid grid-cols-2 gap-4 pt-1.5 border-t border-slate-100 dark:border-slate-850/50 text-xs">
-                <div>
-                  <p className="text-slate-400">Amount Paid</p>
-                  <p className="font-bold text-slate-700 dark:text-slate-350 mt-0.5">
-                    {formatCurrency(invoice.amountPaid, invoice.currency)}
-                  </p>
-                </div>
-                <div>
-                  <p className="text-slate-400">Outstanding</p>
-                  <p className="font-bold text-slate-700 dark:text-slate-350 mt-0.5">
-                    {formatCurrency(outstanding, invoice.currency)}
-                  </p>
-                </div>
-              </div>
-
-              {/* Payment History / Notes */}
-              {invoice.amountPaid > 0 && (
-                <div className="bg-slate-50 dark:bg-slate-950 p-3 rounded-lg border border-slate-150 dark:border-slate-850 space-y-1.5 text-xs text-slate-600 dark:text-slate-400">
-                  <p className="font-bold flex items-center gap-1.5 text-slate-800 dark:text-slate-200">
-                    <History className="w-3.5 h-3.5 text-slate-400" />
-                    <span>Transaction History</span>
-                  </p>
-                  <div className="border-t border-slate-200 dark:border-slate-800 pt-1.5 space-y-1">
-                    <p className="font-medium text-slate-500">
-                      Paid on {invoice.paidAt ? formatDate(invoice.paidAt) : formatDate(invoice.updatedAt)}
-                    </p>
-                    <p className="italic bg-white dark:bg-slate-900 p-1.5 rounded border border-slate-100 dark:border-slate-850/50 text-[10px]">
-                      &quot;{invoice.paymentNotes || 'Direct entry payment'}&quot;
-                    </p>
+              <div className="space-y-3.5 text-xs">
+                {/* Stats grid */}
+                <div className="grid grid-cols-2 gap-2 text-center bg-slate-50/50 dark:bg-slate-950/20 p-2.5 rounded-lg border border-slate-100 dark:border-slate-850/60">
+                  <div>
+                    <span className="text-[10px] font-bold text-slate-450 uppercase tracking-wider block">Total Views</span>
+                    <span className="text-lg font-black text-slate-800 dark:text-slate-100">{viewIntelligence.viewCount}</span>
+                  </div>
+                  <div>
+                    <span className="text-[10px] font-bold text-slate-450 uppercase tracking-wider block">Unique Viewers</span>
+                    <span className="text-lg font-black text-slate-800 dark:text-slate-100 font-mono">
+                      {new Set((viewIntelligence.viewEvents || []).map((e: any) => e.ipHash || e.id)).size || 0}
+                    </span>
                   </div>
                 </div>
-              )}
-            </div>
-          </Card>
+
+                {/* Last Viewed info */}
+                <div className="space-y-1.5 font-semibold text-slate-600 dark:text-slate-400">
+                  {viewIntelligence.lastViewedAt ? (
+                    <>
+                      <p className="flex justify-between">
+                        <span className="text-slate-450">Last Viewed:</span>
+                        <span className="text-slate-800 dark:text-slate-200">
+                          {new Date(viewIntelligence.lastViewedAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                        </span>
+                      </p>
+                      <p className="flex justify-between">
+                        <span className="text-slate-450">Last Device:</span>
+                        <span className="text-slate-800 dark:text-slate-200 capitalize">
+                          {viewIntelligence.lastDeviceType || 'unknown'}
+                        </span>
+                      </p>
+                    </>
+                  ) : (
+                    <p className="text-slate-450 italic text-center py-1">Never viewed by client yet</p>
+                  )}
+                </div>
+
+                {/* Insight Badge */}
+                {viewIntelligence.insight && (
+                  <div className={`p-2.5 rounded-lg border text-[10px] font-bold flex items-start gap-1.5 leading-tight ${
+                    viewIntelligence.insightType === 'action' 
+                      ? 'bg-red-50/50 border-red-100 dark:bg-red-950/10 dark:border-red-900/30 text-red-650 dark:text-red-400'
+                      : viewIntelligence.insightType === 'warning'
+                      ? 'bg-amber-50/50 border-amber-105 dark:bg-amber-950/10 dark:border-amber-900/30 text-amber-650 dark:text-amber-400'
+                      : 'bg-blue-50/50 border-blue-100 dark:bg-blue-950/10 dark:border-blue-900/30 text-blue-650 dark:text-blue-400'
+                  }`}>
+                    <span className="mt-0.5 shrink-0">{viewIntelligence.insightType === 'action' ? '⚠️' : viewIntelligence.insightType === 'warning' ? '🔔' : 'ℹ️'}</span>
+                    <span>{viewIntelligence.insight}</span>
+                  </div>
+                )}
+
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setIsAnalyticsOpen(true)}
+                  className="w-full h-8 text-[10px] font-bold border-slate-200 text-slate-700 dark:border-slate-800 dark:text-slate-350 cursor-pointer"
+                >
+                  View Analytics Details
+                </Button>
+              </div>
+            </Card>
+          )}
 
           {/* 3. Activity Audit Log Card */}
           <Card className="p-5 border border-slate-200/60 dark:border-slate-800/85 bg-white dark:bg-slate-900 rounded-xl shadow-xs text-left space-y-4">
@@ -523,88 +447,6 @@ Sincerely,
         </div>
       </div>
 
-      {/* ── MARK AS PAID DIALOG ── */}
-      <Dialog open={isPaidDialogOpen} onOpenChange={setIsPaidDialogOpen}>
-        <DialogContent className="sm:max-w-[450px] max-h-[90vh] overflow-y-auto bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-xl">
-          <DialogHeader>
-            <DialogTitle className="text-lg font-extrabold text-slate-900 dark:text-slate-50 tracking-tight text-left">
-              Record Payment
-            </DialogTitle>
-            <DialogDescription className="text-xs text-slate-500 text-left">
-              Enter payment details to update the invoice collected status.
-            </DialogDescription>
-          </DialogHeader>
-
-          <form onSubmit={handleMarkPaidSubmit} className="space-y-4 pt-2 text-left">
-            <div className="space-y-1">
-              <label className="block text-[10px] font-bold text-slate-450 uppercase tracking-wide">
-                Amount Received (Outstanding: {formatCurrency(outstanding, invoice.currency)})
-              </label>
-              <Input
-                type="number"
-                required
-                min="0.01"
-                step="any"
-                max={outstanding}
-                value={amountPaidInput}
-                onChange={(e) => setAmountPaidInput(e.target.value)}
-                className="h-10 text-sm font-mono border-slate-300 dark:border-slate-800 dark:bg-slate-950 text-left"
-              />
-            </div>
-
-            <div className="space-y-1">
-              <label className="block text-[10px] font-bold text-slate-450 uppercase tracking-wide">
-                Payment Date
-              </label>
-              <Input
-                type="date"
-                required
-                value={paymentDate}
-                onChange={(e) => setPaymentDate(e.target.value)}
-                className="h-10 text-sm font-mono border-slate-300 dark:border-slate-800 dark:bg-slate-950"
-              />
-            </div>
-
-            <div className="space-y-1">
-              <label className="block text-[10px] font-bold text-slate-450 uppercase tracking-wide">
-                Payment Notes
-              </label>
-              <Textarea
-                value={paymentNotes}
-                onChange={(e) => setPaymentNotes(e.target.value)}
-                placeholder="e.g., Paid via UPI / Bank transfer reference"
-                className="text-xs border-slate-300 dark:border-slate-800 dark:bg-slate-950"
-              />
-            </div>
-
-            <div className="flex justify-end gap-3 pt-2">
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => setIsPaidDialogOpen(false)}
-                className="h-9 font-bold text-xs"
-              >
-                Cancel
-              </Button>
-              <Button
-                type="submit"
-                disabled={isSubmittingPayment}
-                className="h-9 font-bold text-xs bg-emerald-500 hover:bg-emerald-600 text-white cursor-pointer"
-              >
-                {isSubmittingPayment ? (
-                  <>
-                    <Loader2 className="w-3.5 h-3.5 mr-2 animate-spin" />
-                    <span>Saving...</span>
-                  </>
-                ) : (
-                  <span>Record Payment</span>
-                )}
-              </Button>
-            </div>
-          </form>
-        </DialogContent>
-      </Dialog>
-
       {/* ── CANCEL INVOICE DIALOG ── */}
       <Dialog open={isCancelDialogOpen} onOpenChange={setIsCancelDialogOpen}>
         <DialogContent className="sm:max-w-[450px] max-h-[90vh] overflow-y-auto bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-xl">
@@ -656,89 +498,112 @@ Sincerely,
               </Button>
             </div>
           </form>
-        </DialogContent>
+         </DialogContent>
       </Dialog>
 
-      {/* ── MOCK REMINDER EMAIL PREVIEW DIALOG ── */}
-      <Dialog open={isReminderDialogOpen} onOpenChange={setIsReminderDialogOpen}>
-        <DialogContent className="sm:max-w-[480px] max-h-[90vh] overflow-y-auto bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-xl">
-          <DialogHeader>
-            <DialogTitle className="text-lg font-extrabold text-slate-900 dark:text-slate-50 tracking-tight text-left">
-              Send Payment Reminder
-            </DialogTitle>
-            <DialogDescription className="text-xs text-slate-500 text-left">
-              Preview and customize the email notification text before delivering to {invoice.client.name}.
-            </DialogDescription>
-          </DialogHeader>
+      {/* View Analytics Modal */}
+      {invoice.publicShareId && viewIntelligence && (
+        <Dialog open={isAnalyticsOpen} onOpenChange={setIsAnalyticsOpen}>
+          <DialogContent className="max-w-2xl w-full bg-white dark:bg-slate-900 border dark:border-slate-850 p-6 rounded-xl overflow-hidden flex flex-col max-h-[85vh]">
+            <DialogHeader className="text-left space-y-1">
+              <DialogTitle className="text-base font-bold text-slate-900 dark:text-slate-50 flex items-center gap-1.5">
+                <Eye className="w-4.5 h-4.5 text-emerald-600" />
+                <span>Engagement Analytics for #{invoice.invoiceNumber}</span>
+              </DialogTitle>
+              <DialogDescription className="text-xs text-slate-450">
+                Detailed view event history and engagement timeline.
+              </DialogDescription>
+            </DialogHeader>
 
-          <form onSubmit={handleSendReminderSubmit} className="space-y-4 pt-2 text-left">
-            <div className="space-y-1">
-              <label className="block text-[10px] font-bold text-slate-450 uppercase tracking-wide">
-                Email Recipient
-              </label>
-              <Input
-                type="email"
-                disabled
-                value={invoice.client.email || 'No email registered'}
-                className="h-9 text-xs border-slate-250 dark:border-slate-850 dark:bg-slate-950/50"
-              />
+            <div className="space-y-6 my-4 overflow-y-auto pr-1 flex-1 text-left">
+              {/* Mini Chart */}
+              <div className="space-y-1.5">
+                <h5 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Views over time (Last 30 Days)</h5>
+                <div className="h-44 w-full bg-slate-50/50 dark:bg-slate-950/20 border border-slate-100 dark:border-slate-850/60 rounded-xl p-3">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <AreaChart data={getChartData()} margin={{ top: 5, right: 5, left: -25, bottom: 0 }}>
+                      <defs>
+                        <linearGradient id="viewsColor" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="5%" stopColor="#10b981" stopOpacity={0.2}/>
+                          <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
+                        </linearGradient>
+                      </defs>
+                      <XAxis dataKey="date" stroke="#94a3b8" fontSize={9} tickLine={false} axisLine={false} />
+                      <YAxis stroke="#94a3b8" fontSize={9} tickLine={false} axisLine={false} allowDecimals={false} />
+                      <Tooltip 
+                        contentStyle={{ 
+                          backgroundColor: '#0f172a', 
+                          border: 'none', 
+                          borderRadius: '8px', 
+                          fontSize: '10px',
+                          color: '#fff'
+                        }} 
+                      />
+                      <Area type="monotone" dataKey="Views" stroke="#10b981" strokeWidth={2} fillOpacity={1} fill="url(#viewsColor)" />
+                    </AreaChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+
+              {/* Correlation Summary */}
+              {invoice.status === 'PAID' && (
+                <div className="p-3 bg-emerald-50/30 border border-emerald-100/50 dark:bg-emerald-950/10 dark:border-emerald-900/20 rounded-xl flex justify-between items-center text-xs">
+                  <span className="font-semibold text-slate-600 dark:text-slate-400">Views before payment collected:</span>
+                  <span className="font-extrabold text-emerald-600 dark:text-emerald-450 text-xs">
+                    {viewIntelligence.viewsBeforePayment || 0} views
+                  </span>
+                </div>
+              )}
+
+              {/* Detailed events list */}
+              <div className="space-y-2">
+                <h5 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Detailed Event Logs</h5>
+                <div className="border border-slate-200/60 dark:border-slate-800 rounded-xl overflow-hidden max-h-60 overflow-y-auto">
+                  <table className="w-full border-collapse text-left text-[11px]">
+                    <thead>
+                      <tr className="bg-slate-50 dark:bg-slate-800/40 border-b border-slate-250/20 text-slate-450 font-extrabold uppercase">
+                        <th className="py-2.5 px-3">Date & Time</th>
+                        <th className="py-2.5 px-3">Device</th>
+                        <th className="py-2.5 px-3">Browser</th>
+                        <th className="py-2.5 px-3">Location</th>
+                        <th className="py-2.5 px-3">Referrer</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 dark:divide-slate-850 font-semibold text-slate-700 dark:text-slate-350">
+                      {viewIntelligence.viewEvents && viewIntelligence.viewEvents.length > 0 ? (
+                        viewIntelligence.viewEvents.map((event: any) => (
+                          <tr key={event.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-850/10">
+                            <td className="py-2 px-3 font-mono">{new Date(event.viewedAt).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}</td>
+                            <td className="py-2 px-3 capitalize">{event.deviceType}</td>
+                            <td className="py-2 px-3">{event.browser}</td>
+                            <td className="py-2 px-3">{event.country === 'unknown' ? 'IN' : event.country}</td>
+                            <td className="py-2 px-3 truncate max-w-[120px] font-normal" title={event.referrer}>{event.referrer === 'direct' ? 'Direct Link' : event.referrer}</td>
+                          </tr>
+                        ))
+                      ) : (
+                        <tr>
+                          <td colSpan={5} className="py-6 text-center text-slate-400 italic">No events recorded.</td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
             </div>
 
-            <div className="space-y-1">
-              <label className="block text-[10px] font-bold text-slate-455 uppercase tracking-wide">
-                Subject
-              </label>
-              <Input
-                required
-                value={reminderSubject}
-                onChange={(e) => setReminderSubject(e.target.value)}
-                className="h-9 text-xs border-slate-300 dark:border-slate-800 dark:bg-slate-950 font-bold"
-              />
-            </div>
-
-            <div className="space-y-1">
-              <label className="block text-[10px] font-bold text-slate-455 uppercase tracking-wide">
-                Message Body
-              </label>
-              <Textarea
-                required
-                rows={7}
-                value={reminderMessage}
-                onChange={(e) => setReminderMessage(e.target.value)}
-                className="text-xs border-slate-300 dark:border-slate-800 dark:bg-slate-950 leading-relaxed font-sans"
-              />
-            </div>
-
-            <div className="flex justify-end gap-3 pt-2">
+            <div className="flex justify-end gap-3 pt-4 border-t border-slate-100 dark:border-slate-850">
               <Button
-                type="button"
                 variant="outline"
-                onClick={() => setIsReminderDialogOpen(false)}
-                className="h-9 font-bold text-xs"
+                onClick={() => setIsAnalyticsOpen(false)}
+                className="h-9 font-bold text-xs border-slate-200 dark:border-slate-800 cursor-pointer"
               >
-                Cancel
-              </Button>
-              <Button
-                type="submit"
-                disabled={isSendingReminder}
-                className="h-9 font-bold text-xs bg-slate-900 hover:bg-slate-850 text-white cursor-pointer"
-              >
-                {isSendingReminder ? (
-                  <>
-                    <Loader2 className="w-3.5 h-3.5 mr-2 animate-spin" />
-                    <span>Sending...</span>
-                  </>
-                ) : (
-                  <>
-                    <Mail className="w-3.5 h-3.5 mr-2" />
-                    <span>Send Reminder</span>
-                  </>
-                )}
+                Close
               </Button>
             </div>
-          </form>
-        </DialogContent>
-      </Dialog>
+          </DialogContent>
+        </Dialog>
+      )}
+
     </div>
   );
 }

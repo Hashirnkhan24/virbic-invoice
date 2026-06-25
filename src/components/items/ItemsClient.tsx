@@ -465,7 +465,7 @@ export default function ItemsClient({ businesses }: ItemsClientProps) {
 
             {/* SAC Codes directory */}
             <div className="space-y-2">
-              <h4 className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Common Freelancer SAC Codes</h4>
+              <h4 className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Common SAC Codes for Services</h4>
               
               <div className="space-y-1.5">
                 {/* SAC 1 */}

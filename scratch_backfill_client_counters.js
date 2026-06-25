@@ -16,20 +16,20 @@ const pool = new Pool({ connectionString });
 const adapter = new PrismaPg(pool);
 const prisma = new PrismaClient({ adapter });
 
-// Replicate getClientFinancials locally in JS
 async function getClientFinancials(clientId, userId) {
-  const [paidAgg, outstandingAgg, totalInvoices, lastInvoice] = await Promise.all([
-    prisma.invoice.aggregate({
-      where: { clientId, userId, status: 'PAID' },
-      _sum: { grandTotal: true }
-    }),
-    prisma.invoice.aggregate({
-      where: { 
-        clientId, 
-        userId, 
-        status: { in: ['SENT', 'OVERDUE', 'PARTIAL'] } 
+  const [invoices, totalInvoices, lastInvoice] = await Promise.all([
+    prisma.invoice.findMany({
+      where: {
+        clientId,
+        userId,
+        status: { notIn: ['DRAFT', 'CANCELLED'] }
       },
-      _sum: { grandTotal: true }
+      select: {
+        grandTotal: true,
+        amountPaid: true,
+        currency: true,
+        status: true
+      }
     }),
     prisma.invoice.count({
       where: { clientId, userId }
@@ -41,8 +41,33 @@ async function getClientFinancials(clientId, userId) {
     })
   ]);
 
-  const totalBilled = paidAgg._sum.grandTotal ? Number(paidAgg._sum.grandTotal) : 0;
-  const totalOutstanding = outstandingAgg._sum.grandTotal ? Number(outstandingAgg._sum.grandTotal) : 0;
+  const ratesToINR = {
+    INR: 1.0,
+    USD: 83.5,
+    EUR: 90.0,
+    GBP: 106.0,
+  };
+
+  function convertCurrency(amount, from, to) {
+    if (from === to) return amount;
+    const amountInINR = amount * (ratesToINR[from] || 1.0);
+    const targetRate = ratesToINR[to] || 1.0;
+    return amountInINR / targetRate;
+  }
+
+  let totalBilled = 0;
+  let totalOutstanding = 0;
+
+  for (const inv of invoices) {
+    const grandTotalINR = convertCurrency(Number(inv.grandTotal), inv.currency, 'INR');
+    const amountPaidINR = convertCurrency(Number(inv.amountPaid), inv.currency, 'INR');
+    
+    totalBilled += amountPaidINR;
+
+    if (['SENT', 'OVERDUE', 'PARTIAL'].includes(inv.status)) {
+      totalOutstanding += Math.max(0, grandTotalINR - amountPaidINR);
+    }
+  }
 
   return {
     totalBilled,

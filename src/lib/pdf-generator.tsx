@@ -480,6 +480,32 @@ const createStyles = (theme: ReturnType<typeof getTemplateTheme>) =>
       fontSize: 6,
       color: theme.textSecondary,
     },
+    paidStampContainer: {
+      position: 'absolute',
+      top: 130,
+      right: 40,
+      borderWidth: 2,
+      borderColor: '#10b981',
+      borderRadius: 4,
+      padding: '4 8',
+      transform: 'rotate(-12deg)',
+      alignItems: 'center',
+      opacity: 0.8,
+    },
+    paidStampText: {
+      color: '#10b981',
+      fontSize: 14,
+      fontFamily: 'Helvetica-Bold',
+      fontWeight: 'bold',
+      letterSpacing: 1,
+    },
+    paidStampSubtext: {
+      color: '#10b981',
+      fontSize: 8,
+      fontFamily: 'Helvetica-Bold',
+      fontWeight: 'bold',
+      marginTop: 2,
+    },
   });
 
 /* ── React-PDF Document Component ── */
@@ -488,6 +514,7 @@ interface InvoicePDFDocumentProps {
   qrCodeDataUrl?: string;
   logoBase64?: string;
   signatureBase64?: string;
+  asReceipt?: boolean;
 }
 
 export function InvoicePDFDocument({
@@ -495,6 +522,7 @@ export function InvoicePDFDocument({
   qrCodeDataUrl,
   logoBase64,
   signatureBase64,
+  asReceipt = false,
 }: InvoicePDFDocumentProps) {
   const theme = getTemplateTheme(data.template, data.business.brandColor || undefined);
   const styles = createStyles(theme);
@@ -550,22 +578,42 @@ export function InvoicePDFDocument({
 
   const invoiceMeta = (
     <View style={styles.headerRight}>
-      <Text style={styles.invoiceBadge}>Tax Invoice</Text>
+      <Text style={styles.invoiceBadge}>{asReceipt ? 'RECEIPT' : 'Tax Invoice'}</Text>
       <Text style={styles.invoiceMetaText}>
-        Invoice #: <Text style={{ fontWeight: 'bold' }}>{data.invoiceNumber}</Text>
+        {asReceipt ? 'Receipt' : 'Invoice'} #: <Text style={{ fontWeight: 'bold' }}>{asReceipt ? `RCT-${data.invoiceNumber}` : data.invoiceNumber}</Text>
       </Text>
       <Text style={styles.invoiceMetaText}>
         Issue Date: {formatDate(data.issueDate)}
       </Text>
-      <Text style={styles.invoiceMetaText}>
-        Due Date: {formatDate(data.dueDate)}
-      </Text>
+      {asReceipt ? (
+        <Text style={styles.invoiceMetaText}>
+          Paid on: {formatDate((data as any).paymentDate || data.issueDate)}
+        </Text>
+      ) : (
+        <Text style={styles.invoiceMetaText}>
+          Due Date: {formatDate(data.dueDate)}
+        </Text>
+      )}
+      {asReceipt && (
+        <Text style={styles.invoiceMetaText}>
+          Original Invoice: {data.invoiceNumber}
+        </Text>
+      )}
     </View>
   );
 
   return (
-    <Document title={`Invoice_${data.invoiceNumber}`}>
+    <Document title={asReceipt ? `Receipt_${data.invoiceNumber}` : `Invoice_${data.invoiceNumber}`}>
       <Page size="A4" style={styles.page}>
+        {/* PAID Watermark/Stamp */}
+        {asReceipt && (
+          <View style={styles.paidStampContainer}>
+            <Text style={styles.paidStampText}>PAID IN FULL</Text>
+            <Text style={styles.paidStampSubtext}>
+              {formatCurrency(data.totals.grandTotal, data.currency)}
+            </Text>
+          </View>
+        )}
         {/* ── HEADER ── */}
         {showHeaderBanner ? (
           <View style={styles.headerBanner}>
@@ -913,7 +961,10 @@ export async function fetchImageAsBase64(url?: string | null): Promise<string | 
  * Primary visual entrypoint for PDF Generation.
  * Returns either a Node Buffer (Server-side) or a Blob (Client-side).
  */
-export async function generateInvoicePDF(invoiceData: InvoicePDFData): Promise<any> {
+export async function generateInvoicePDF(
+  invoiceData: InvoicePDFData,
+  options?: { asReceipt?: boolean }
+): Promise<any> {
   // 1. Prefetch logo and signature images to Base64
   const [logoBase64, signatureBase64] = await Promise.all([
     fetchImageAsBase64(invoiceData.business.logo),
@@ -938,13 +989,20 @@ export async function generateInvoicePDF(invoiceData: InvoicePDFData): Promise<a
     qrCodeDataUrl,
     logoBase64,
     signatureBase64,
+    asReceipt: options?.asReceipt,
   });
 
   const pdfInstance = pdf(doc as any);
 
   if (typeof window === 'undefined') {
-    // Node.js environment
-    return await pdfInstance.toBuffer();
+    // Node.js environment - consume the PDFDocument stream to return a Buffer
+    const stream = await pdfInstance.toBuffer();
+    return new Promise<Buffer>((resolve, reject) => {
+      const chunks: Buffer[] = [];
+      stream.on('data', (chunk: any) => chunks.push(Buffer.from(chunk)));
+      stream.on('error', (err: any) => reject(err));
+      stream.on('end', () => resolve(Buffer.concat(chunks)));
+    });
   } else {
     // Browser environment
     return await pdfInstance.toBlob();
