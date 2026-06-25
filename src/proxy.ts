@@ -9,6 +9,7 @@ const isPublicRoute = createRouteMatcher([
   '/api/invoices/share/(.*)', // Public invoice share API
   '/api/webhooks/(.*)',   // Clerk webhooks (must be public)
   '/api/cron/(.*)',       // Cron jobs (use their own CRON_SECRET)
+  '/api/whatsapp/webhook(.*)', // WhatsApp webhook (must be public)
 ]);
 
 const proxyHandler = clerkMiddleware(async (auth, req) => {
