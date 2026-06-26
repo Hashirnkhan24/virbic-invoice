@@ -137,14 +137,44 @@ export default function PrivacyPolicyPage() {
 
             <section className="space-y-3">
               <h2 className="text-lg md:text-xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
-                <span className="text-emerald-500 font-mono">6.</span> Your Rights & Contact Details
+                <span className="text-emerald-500 font-mono">6.</span> Legal Basis for Processing
               </h2>
               <p className="text-xs md:text-sm text-slate-600 dark:text-slate-400 leading-relaxed">
-                You retain complete control of your data. You may request copies, modifications, or complete deletion of your personal details, business profiles, and history at any time.
+                We process your information under the following legal bases:
               </p>
-              <p className="text-xs md:text-sm text-slate-600 dark:text-slate-400">
+              <ul className="list-disc list-inside pl-4 text-xs md:text-sm text-slate-600 dark:text-slate-400 space-y-1.5">
+                <li><strong>Provide the Virbic Service</strong>: Necessary to fulfill our contractual commitments to generate, verify, and deliver invoices.</li>
+                <li><strong>Comply with Legal Obligations</strong>: To satisfy tax reporting, auditing, and other statutory requirements.</li>
+                <li><strong>Protect Against Fraud</strong>: To ensure payment authenticity and secure accounts.</li>
+                <li><strong>Improve Our Services</strong>: Under our legitimate interests to optimize user experience, performance, and automation.</li>
+              </ul>
+            </section>
+
+            <section className="space-y-3">
+              <h2 className="text-lg md:text-xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                <span className="text-emerald-500 font-mono">7.</span> Data Deletion
+              </h2>
+              <p className="text-xs md:text-sm text-slate-600 dark:text-slate-400 leading-relaxed">
+                You may request complete deletion of your account, business profiles, and associated personal data at any time. To do so, please contact us at <a href="mailto:support@virbic.in" className="text-emerald-500 hover:underline">support@virbic.in</a> or use the account deletion option available within the Virbic dashboard preferences, where available.
+              </p>
+            </section>
+
+            <section className="space-y-3">
+              <h2 className="text-lg md:text-xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                <span className="text-emerald-500 font-mono">8.</span> Changes to This Privacy Policy
+              </h2>
+              <p className="text-xs md:text-sm text-slate-600 dark:text-slate-400 leading-relaxed">
+                We may update this Privacy Policy from time to time. Any changes will be posted on this page with an updated "Last Updated" date at the top of the policy. We encourage you to review this policy periodically.
+              </p>
+            </section>
+
+            <section className="space-y-3">
+              <h2 className="text-lg md:text-xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                <span className="text-emerald-500 font-mono">9.</span> Contact Us
+              </h2>
+              <p className="text-xs md:text-sm text-slate-600 dark:text-slate-400 leading-relaxed">
                 For questions, support, or privacy-related requests, please contact us at:
-                <span className="block font-bold text-slate-900 dark:text-white mt-1.5">Email: support@virbic.com</span>
+                <span className="block font-bold text-slate-900 dark:text-white mt-1.5">Email: support@virbic.in</span>
               </p>
             </section>
 
