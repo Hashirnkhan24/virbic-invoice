@@ -175,7 +175,17 @@ export async function sendPaymentConfirmation(options: PaymentConfirmationOption
         to: invoice.client.phone,
         body: whatsappMessage,
         conversationId: conversation.id,
-        userId: invoice.userId
+        userId: invoice.userId,
+        template: {
+          name: 'payment_confirmation',
+          variables: [
+            clientName,
+            amountPaid,
+            invoiceNumber,
+            receiptLink,
+            businessName
+          ]
+        }
       });
       console.log(`[CONFIRMATION SERVICE] Payment receipt sent via WhatsApp to client ${invoice.client.name}`);
     } catch (waErr: any) {

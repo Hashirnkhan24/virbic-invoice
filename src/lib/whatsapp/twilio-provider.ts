@@ -157,4 +157,13 @@ export class TwilioProvider implements WhatsAppProvider {
       return false;
     }
   }
+
+  async sendTemplate(
+    to: string,
+    templateName: string,
+    languageCode: string,
+    variables: string[]
+  ): Promise<{ messageId: string }> {
+    throw new Error('sendTemplate is not supported on Twilio provider. Please configure WhatsApp Business API (Meta).');
+  }
 }

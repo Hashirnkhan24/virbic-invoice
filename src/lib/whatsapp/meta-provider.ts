@@ -168,6 +168,64 @@ export class MetaProvider implements WhatsAppProvider {
     return { messageId };
   }
 
+  async sendTemplate(
+    to: string,
+    templateName: string,
+    languageCode: string = 'en',
+    variables: string[]
+  ): Promise<{ messageId: string }> {
+    this.ensureConfig();
+    const cleanTo = to.replace(/\D/g, '');
+
+    const url = `https://graph.facebook.com/v20.0/${this.phoneNumberId}/messages`;
+    const parameters = variables.map(v => ({
+      type: 'text',
+      text: v
+    }));
+
+    const payload = {
+      messaging_product: 'whatsapp',
+      recipient_type: 'individual',
+      to: cleanTo,
+      type: 'template',
+      template: {
+        name: templateName,
+        language: {
+          code: languageCode
+        },
+        components: [
+          {
+            type: 'body',
+            parameters: parameters
+          }
+        ]
+      }
+    };
+
+    console.log(`[Meta WhatsApp] Outbound Template Request: POST ${url}`);
+    console.log(`[Meta WhatsApp] Request Payload:`, JSON.stringify(payload, null, 2));
+
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${this.accessToken}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(payload)
+    });
+
+    const data = await response.json() as any;
+    console.log(`[Meta WhatsApp] Response Status: ${response.status}`);
+    console.log(`[Meta WhatsApp] Response Data:`, JSON.stringify(data, null, 2));
+
+    if (!response.ok) {
+      throw new Error(data.error?.message || `Meta API send template failed with status ${response.status}`);
+    }
+
+    const messageId = data.messages?.[0]?.id || '';
+    return { messageId };
+  }
+
   parseWebhook(payload: any): WhatsAppWebhookEvent {
     const entry = payload.entry?.[0];
     const change = entry?.changes?.[0];

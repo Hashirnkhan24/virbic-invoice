@@ -110,12 +110,63 @@ export async function POST(
       paymentLink: invoiceLink
     });
 
+    // Map template variables for WhatsApp API
+    let templateStage = undefined;
+    if (isReminder) {
+      const rawStage = Math.min(3, invoice.reminderCount + 1);
+      templateStage = rawStage === 3 ? 4 : rawStage;
+    }
+    const currentTemplateName = isReminder ? `payment_reminder_stage_${templateStage}` : 'invoice_delivered';
+
+    let templateVariables: string[] = [];
+    if (!isReminder) {
+      templateVariables = [
+        invoice.client.name,
+        invoice.invoiceNumber,
+        invoice.business.name,
+        `₹${Number(invoice.grandTotal).toFixed(2)}`,
+        formattedDate,
+        invoiceLink
+      ];
+    } else {
+      if (templateStage === 1) {
+        templateVariables = [
+          invoice.client.name,
+          invoice.invoiceNumber,
+          invoice.business.name,
+          `₹${Number(invoice.grandTotal).toFixed(2)}`,
+          formattedDate,
+          invoiceLink
+        ];
+      } else if (templateStage === 2) {
+        templateVariables = [
+          invoice.client.name,
+          invoice.invoiceNumber,
+          `₹${Number(invoice.grandTotal).toFixed(2)}`,
+          invoiceLink,
+          invoice.business.name
+        ];
+      } else if (templateStage === 4) {
+        templateVariables = [
+          invoice.invoiceNumber,
+          invoice.client.name,
+          `₹${Number(invoice.grandTotal).toFixed(2)}`,
+          invoice.business.name,
+          invoiceLink
+        ];
+      }
+    }
+
     // Send WhatsApp Message
     const result = await sendWhatsAppMessage({
       to: normalizedPhone,
       body: compiledMessage,
       conversationId: conversation.id,
-      userId: user.id
+      userId: user.id,
+      template: {
+        name: currentTemplateName,
+        variables: templateVariables
+      }
     });
 
     if (!result.success) {

@@ -8,6 +8,9 @@ export interface WhatsAppProvider {
   // Send an interactive message (buttons, lists)
   sendInteractive(to: string, body: string, buttons: Array<{ id: string; title: string }>): Promise<{ messageId: string }>
   
+  // Send a template message
+  sendTemplate(to: string, templateName: string, languageCode: string, variables: string[]): Promise<{ messageId: string }>
+  
   // Parse incoming webhook payload
   parseWebhook(payload: unknown): WhatsAppWebhookEvent
   

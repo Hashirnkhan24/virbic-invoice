@@ -119,11 +119,53 @@ export async function GET(request: NextRequest) {
             });
           }
 
+          const templateStage = stage === 3 ? 4 : stage;
+          const currentTemplateName = `payment_reminder_stage_${templateStage}`;
+          const formattedDate = new Date(invoice.dueDate).toLocaleDateString('en-IN', {
+            day: 'numeric',
+            month: 'short',
+            year: 'numeric'
+          });
+          const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://virbic.com';
+          const invoiceLink = `${appUrl}/i/${invoice.publicShareId}`;
+
+          let templateVariables: string[] = [];
+          if (templateStage === 1) {
+            templateVariables = [
+              invoice.client.name,
+              invoice.invoiceNumber,
+              invoice.business.name,
+              `₹${Number(invoice.grandTotal).toFixed(2)}`,
+              formattedDate,
+              invoiceLink
+            ];
+          } else if (templateStage === 2) {
+            templateVariables = [
+              invoice.client.name,
+              invoice.invoiceNumber,
+              `₹${Number(invoice.grandTotal).toFixed(2)}`,
+              invoiceLink,
+              invoice.business.name
+            ];
+          } else if (templateStage === 4) {
+            templateVariables = [
+              invoice.invoiceNumber,
+              invoice.client.name,
+              `₹${Number(invoice.grandTotal).toFixed(2)}`,
+              invoice.business.name,
+              invoiceLink
+            ];
+          }
+
           await sendWhatsAppMessage({
             to: normalizedPhone,
             body: body,
             conversationId: conversation.id,
-            userId: invoice.userId
+            userId: invoice.userId,
+            template: {
+              name: currentTemplateName,
+              variables: templateVariables
+            }
           });
         } catch (waErr: any) {
           console.error(`[CRON REMINDERS] Failed to send WhatsApp for invoice ${invoice.id}:`, waErr.message);

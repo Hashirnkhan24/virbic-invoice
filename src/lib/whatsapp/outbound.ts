@@ -8,7 +8,8 @@ export async function sendWhatsAppMessage({
   mediaType,
   buttons,
   conversationId,
-  userId
+  userId,
+  template
 }: {
   to: string;
   body: string;
@@ -17,6 +18,7 @@ export async function sendWhatsAppMessage({
   buttons?: Array<{ id: string; title: string }>;
   conversationId?: string;
   userId?: string;
+  template?: { name: string; variables: string[] };
 }): Promise<{ success: boolean; messageId?: string; error?: string }> {
   try {
     let providerConfig: any = undefined;
@@ -40,7 +42,9 @@ export async function sendWhatsAppMessage({
     const provider = getWhatsAppProvider(providerConfig);
     let result: { messageId: string };
 
-    if (mediaUrl && mediaType) {
+    if (template && provider.sendTemplate) {
+      result = await provider.sendTemplate(to, template.name, 'en', template.variables);
+    } else if (mediaUrl && mediaType) {
       result = await provider.sendMedia(to, body, mediaUrl, mediaType);
     } else if (buttons && buttons.length > 0) {
       result = await provider.sendInteractive(to, body, buttons);
@@ -54,7 +58,7 @@ export async function sendWhatsAppMessage({
         data: {
           conversationId,
           direction: 'OUTBOUND',
-          messageType: mediaType ? mediaType.toUpperCase() : buttons ? 'INTERACTIVE' : 'TEXT',
+          messageType: template ? 'TEMPLATE' : mediaType ? mediaType.toUpperCase() : buttons ? 'INTERACTIVE' : 'TEXT',
           content: body,
           mediaUrl,
           providerMessageId: result.messageId,
