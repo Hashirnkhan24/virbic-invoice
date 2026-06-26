@@ -487,7 +487,7 @@ export default function DeliveryActions({ invoice, onUpdate }: DeliveryActionsPr
               Send Invoice via WhatsApp
             </DialogTitle>
             <DialogDescription className="text-xs text-slate-500">
-              Select your delivery channel. Send automatically using the Virbic platform (Twilio Sandbox) or redirect to standard WhatsApp Web.
+              Select your delivery channel. Send automatically using the Virbic platform (WhatsApp Business API) or redirect to standard WhatsApp Web.
             </DialogDescription>
           </DialogHeader>
 
@@ -522,12 +522,12 @@ export default function DeliveryActions({ invoice, onUpdate }: DeliveryActionsPr
                 {isSharingWhatsAppAutomated ? (
                   <>
                     <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                    <span>Delivering via Twilio...</span>
+                    <span>Delivering via WhatsApp...</span>
                   </>
                 ) : (
                   <>
                     <Send className="w-4 h-4 mr-2" />
-                    <span>Send Automatically (via Twilio API)</span>
+                    <span>Send Automatically (via WhatsApp Business API)</span>
                   </>
                 )}
               </Button>

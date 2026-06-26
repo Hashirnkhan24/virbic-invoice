@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { prisma } from '@/lib/prisma';
 import { getAuthUser } from '@/lib/auth';
+import { autoCreatePortal } from '@/lib/portal-utils';
 
 
 
@@ -205,10 +206,15 @@ export async function GET(request: NextRequest) {
   } catch (error: any) {
     console.error('Error fetching clients:', error);
     return NextResponse.json(
-      { error: error.message || 'Failed to fetch clients' },
+      { 
+        error: error.message || 'Failed to fetch clients',
+        stack: error.stack,
+        details: String(error)
+      },
       { status: 550 }
     );
   }
+
 }
 
 // POST: Create a new client (supports single or bulk import)
@@ -254,7 +260,6 @@ export async function POST(request: NextRequest) {
         where: { userId: user.id }
       });
       if (!preferences || preferences.portalAutoCreate) {
-        const { autoCreatePortal } = await import('@/lib/portal-utils');
         await Promise.all(
           createdClients.map((c) => autoCreatePortal(c.id, user.id))
         );
@@ -290,7 +295,6 @@ export async function POST(request: NextRequest) {
       where: { userId: user.id }
     });
     if (!preferences || preferences.portalAutoCreate) {
-      const { autoCreatePortal } = await import('@/lib/portal-utils');
       await autoCreatePortal(client.id, user.id);
     }
 

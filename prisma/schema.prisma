@@ -474,7 +474,7 @@ model UserPreference {
   
   // WhatsApp config (BYOC optional override)
   whatsAppEnabled       Boolean @default(false)
-  whatsAppProvider      String  @default("twilio")
+  whatsAppProvider      String  @default("meta")
   twilioAccountSid      String?
   twilioAuthToken       String?
   twilioWhatsAppNumber  String?

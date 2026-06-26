@@ -86,7 +86,7 @@ export async function PUT(request: NextRequest) {
         upiAutoApproveEnabled: upiAutoApproveEnabled !== undefined ? upiAutoApproveEnabled : false,
         upiAutoApproveHours: upiAutoApproveHours !== undefined ? parseInt(upiAutoApproveHours) : 72,
         whatsAppEnabled: whatsAppEnabled !== undefined ? whatsAppEnabled : false,
-        whatsAppProvider: whatsAppProvider || 'twilio',
+        whatsAppProvider: whatsAppProvider || 'meta',
         twilioAccountSid: twilioAccountSid || null,
         twilioAuthToken: twilioAuthToken || null,
         twilioWhatsAppNumber: twilioWhatsAppNumber || null,

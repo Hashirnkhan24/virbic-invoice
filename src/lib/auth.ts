@@ -1,6 +1,7 @@
 import { auth, currentUser } from '@clerk/nextjs/server';
 import { prisma } from '@/lib/prisma';
 import { NextResponse } from 'next/server';
+import { DEFAULT_REMINDER_TEMPLATES } from './reminder-defaults';
 
 /**
  * Server-side auth helper for API routes.
@@ -86,7 +87,6 @@ export async function getAuthUser() {
     });
 
     // Seed default reminder templates
-    const { DEFAULT_REMINDER_TEMPLATES } = require('./reminder-defaults');
     for (const t of DEFAULT_REMINDER_TEMPLATES) {
       await prisma.reminderTemplate.upsert({
         where: {

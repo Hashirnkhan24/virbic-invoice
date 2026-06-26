@@ -294,7 +294,7 @@ export default function SettingsClient({
     upiAutoApproveEnabled: initialPreferences?.upiAutoApproveEnabled ?? false,
     upiAutoApproveHours: initialPreferences?.upiAutoApproveHours ?? 72,
     whatsAppEnabled: initialPreferences?.whatsAppEnabled ?? false,
-    whatsAppProvider: initialPreferences?.whatsAppProvider ?? 'twilio',
+    whatsAppProvider: initialPreferences?.whatsAppProvider ?? 'meta',
     twilioAccountSid: initialPreferences?.twilioAccountSid ?? '',
     twilioAuthToken: initialPreferences?.twilioAuthToken ?? '',
     twilioWhatsAppNumber: initialPreferences?.twilioWhatsAppNumber ?? '',

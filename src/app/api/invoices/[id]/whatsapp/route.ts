@@ -119,7 +119,7 @@ export async function POST(
     });
 
     if (!result.success) {
-      return NextResponse.json({ error: result.error || 'Failed to deliver message via Twilio' }, { status: 500 });
+      return NextResponse.json({ error: result.error || 'Failed to deliver message via WhatsApp' }, { status: 500 });
     }
 
     let updatedInvoice = null;

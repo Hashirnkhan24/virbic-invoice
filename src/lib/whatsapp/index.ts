@@ -10,7 +10,7 @@ export function getWhatsAppProvider(config?: {
   metaAccessToken?: string;
   metaPhoneNumberId?: string;
 }): WhatsAppProvider {
-  const providerType = config?.provider || process.env.WHATSAPP_PROVIDER || 'twilio';
+  const providerType = config?.provider || process.env.WHATSAPP_PROVIDER || 'meta';
 
   switch (providerType) {
     case 'twilio':
