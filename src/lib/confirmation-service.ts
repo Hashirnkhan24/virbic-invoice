@@ -146,6 +146,44 @@ export async function sendPaymentConfirmation(options: PaymentConfirmationOption
     }
   }
 
+  // Send WhatsApp if enabled and client has phone
+  if (shouldSendWhatsapp && invoice.client.phone) {
+    try {
+      const { sendWhatsAppMessage } = await import('./whatsapp/outbound');
+      
+      // Try to find conversation
+      let conversation = await prisma.whatsAppConversation.findFirst({
+        where: {
+          userId: invoice.userId,
+          clientId: invoice.clientId
+        }
+      });
+      
+      if (!conversation) {
+        conversation = await prisma.whatsAppConversation.create({
+          data: {
+            userId: invoice.userId,
+            clientId: invoice.clientId,
+            clientPhone: invoice.client.phone,
+            status: 'ACTIVE',
+            optInStatus: 'CONFIRMED'
+          }
+        });
+      }
+      
+      await sendWhatsAppMessage({
+        to: invoice.client.phone,
+        body: whatsappMessage,
+        conversationId: conversation.id,
+        userId: invoice.userId
+      });
+      console.log(`[CONFIRMATION SERVICE] Payment receipt sent via WhatsApp to client ${invoice.client.name}`);
+    } catch (waErr: any) {
+      console.error('[CONFIRMATION SERVICE] WhatsApp dispatch failed:', waErr.message);
+    }
+  }
+
+
   return {
     whatsappUrl,
     whatsappMessage,

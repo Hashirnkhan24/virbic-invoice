@@ -31,6 +31,9 @@ import { INDIAN_STATES } from '@/lib/constants';
 import { useCreateBusiness, useGetBusinesses } from '@/hooks/useBusiness';
 import { useLocalStorage } from '@/hooks/useLocalStorage';
 import { cn } from '@/lib/utils';
+import { useCurrentUser } from '@/hooks/useCurrentUser';
+import WelcomeWhatsApp from '@/components/dashboard/WelcomeWhatsApp';
+
 
 // Predefined colors
 const PREDEFINED_COLORS = [
@@ -169,6 +172,8 @@ export default function OnboardingPage() {
   const [, setActiveBusinessId] = useLocalStorage<string | null>('active_business_id', null);
 
   const { businesses, loading: loadingBusinesses } = useGetBusinesses();
+  const { dbUser } = useCurrentUser();
+
 
   useEffect(() => {
     if (!loadingBusinesses && businesses && businesses.length > 0) {
@@ -967,6 +972,13 @@ export default function OnboardingPage() {
                     )}
                   </div>
                 </div>
+
+                {/* WhatsApp Assistant Onboarding */}
+                {dbUser && (
+                  <div className="pt-2 max-w-md mx-auto md:max-w-xl text-left">
+                    <WelcomeWhatsApp userId={dbUser.id} brandColor={watchBrandColor} />
+                  </div>
+                )}
 
                 {/* Action Buttons */}
                 <div className="flex flex-col sm:flex-row gap-4 max-w-md mx-auto pt-4 relative z-25">

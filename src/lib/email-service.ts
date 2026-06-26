@@ -360,4 +360,43 @@ export async function sendReceiptEmail(options: {
   };
 }
 
+export async function sendWelcomeEmail(to: string, name: string): Promise<{ success: boolean; messageId: string }> {
+  const subject = `Welcome to BillCraft, ${name}! 🚀`;
+  const htmlBody = `
+    <div style="font-family: system-ui, -apple-system, sans-serif; padding: 24px; color: #1e293b; max-width: 600px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 12px;">
+      <h2 style="color: #10b981; font-weight: 800; font-size: 24px; margin-top: 0; margin-bottom: 12px; letter-spacing: -0.025em;">Welcome to BillCraft!</h2>
+      <p style="font-size: 16px; line-height: 1.6; color: #475569; margin-bottom: 16px;">
+        Hi ${name},<br/><br/>
+        We're thrilled to have you onboard! BillCraft is designed to help you create professional, GST-compliant invoices and collect payments with <b>zero fees</b> using dynamic UPI.
+      </p>
+      <div style="background-color: #f8fafc; border: 1px solid #f1f5f9; border-radius: 8px; padding: 16px; margin-bottom: 24px;">
+        <h3 style="font-size: 14px; font-weight: 700; color: #334155; margin-top: 0; margin-bottom: 8px;">🚀 Quick Start Guide:</h3>
+        <ul style="font-size: 13px; color: #64748b; padding-left: 20px; margin: 0; line-height: 1.6;">
+          <li>Create your Business Profile in Settings to set up your bank details and custom brand colors.</li>
+          <li>Add your Clients under the Clients Registry with their billing and shipping details.</li>
+          <li>Link your WhatsApp Assistant from the Dashboard to create invoices and send reminders on the go!</li>
+        </ul>
+      </div>
+      <p style="margin-bottom: 24px; text-align: center;">
+        <a href="${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/dashboard" style="display: inline-block; padding: 12px 24px; background-color: #10b981; color: white; text-decoration: none; border-radius: 8px; font-weight: bold; font-size: 14px; box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);">
+          Go to Dashboard
+        </a>
+      </p>
+      <hr style="border: 0; border-top: 1px solid #e2e8f0; margin: 24px 0;" />
+      <p style="font-size: 11px; color: #94a3b8; margin: 0; line-height: 1.5; text-align: center;">
+        If you have any questions, feel free to contact our support at support@billcraft.in.
+      </p>
+    </div>
+  `;
+
+  return sendReceiptEmail({
+    to,
+    subject,
+    htmlBody,
+    fromName: 'BillCraft Onboarding',
+    replyToEmail: 'support@billcraft.in',
+  });
+}
+
+
 

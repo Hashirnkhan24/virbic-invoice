@@ -9,6 +9,8 @@ import DashboardClient from '@/components/dashboard/DashboardClient';
 import { Button } from '@/components/ui/button';
 import { redirect } from 'next/navigation';
 import { cookies } from 'next/headers';
+import WelcomeWhatsApp from '@/components/dashboard/WelcomeWhatsApp';
+
 
 export default async function DashboardPage(props: {
   searchParams: Promise<{ businesses?: string }>;
@@ -61,6 +63,11 @@ export default async function DashboardPage(props: {
             <span>Create Your First Invoice</span>
           </Button>
         </Link>
+
+        {/* WhatsApp Assistant Onboarding */}
+        <div className="w-full pt-4 text-left">
+          <WelcomeWhatsApp userId={user.id} />
+        </div>
       </div>
     );
   }

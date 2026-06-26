@@ -2308,45 +2308,74 @@ export default function SettingsClient({
                                   </SelectTrigger>
                                   <SelectContent>
                                     <SelectItem value="twilio">Twilio (v1 Sandbox / API)</SelectItem>
-                                    <SelectItem value="meta" disabled>Meta Cloud API (Coming soon)</SelectItem>
+                                    <SelectItem value="meta">Meta Cloud API</SelectItem>
                                   </SelectContent>
                                 </Select>
                               </div>
 
-                              <div className="space-y-2">
-                                <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Custom WhatsApp Sender Number</label>
-                                <Input
-                                  placeholder="e.g. +14155238886 (leave blank for platform default)"
-                                  value={preferences.twilioWhatsAppNumber}
-                                  onChange={(e) => setPreferences(p => ({ ...p, twilioWhatsAppNumber: e.target.value }))}
-                                  className="text-xs font-semibold"
-                                />
-                              </div>
+                              {preferences.whatsAppProvider === 'twilio' && (
+                                <div className="space-y-2">
+                                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Custom WhatsApp Sender Number</label>
+                                  <Input
+                                    placeholder="e.g. +14155238886 (leave blank for platform default)"
+                                    value={preferences.twilioWhatsAppNumber}
+                                    onChange={(e) => setPreferences(p => ({ ...p, twilioWhatsAppNumber: e.target.value }))}
+                                    className="text-xs font-semibold"
+                                  />
+                                </div>
+                              )}
                             </div>
 
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                              <div className="space-y-2">
-                                <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Twilio Account SID</label>
-                                <Input
-                                  type="password"
-                                  placeholder="AC... (leave blank for platform default)"
-                                  value={preferences.twilioAccountSid}
-                                  onChange={(e) => setPreferences(p => ({ ...p, twilioAccountSid: e.target.value }))}
-                                  className="text-xs font-semibold"
-                                />
-                              </div>
+                            {preferences.whatsAppProvider === 'twilio' && (
+                              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div className="space-y-2">
+                                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Twilio Account SID</label>
+                                  <Input
+                                    type="password"
+                                    placeholder="AC... (leave blank for platform default)"
+                                    value={preferences.twilioAccountSid}
+                                    onChange={(e) => setPreferences(p => ({ ...p, twilioAccountSid: e.target.value }))}
+                                    className="text-xs font-semibold"
+                                  />
+                                </div>
 
-                              <div className="space-y-2">
-                                <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Twilio Auth Token</label>
-                                <Input
-                                  type="password"
-                                  placeholder="Token... (leave blank for platform default)"
-                                  value={preferences.twilioAuthToken}
-                                  onChange={(e) => setPreferences(p => ({ ...p, twilioAuthToken: e.target.value }))}
-                                  className="text-xs font-semibold"
-                                />
+                                <div className="space-y-2">
+                                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Twilio Auth Token</label>
+                                  <Input
+                                    type="password"
+                                    placeholder="Token... (leave blank for platform default)"
+                                    value={preferences.twilioAuthToken}
+                                    onChange={(e) => setPreferences(p => ({ ...p, twilioAuthToken: e.target.value }))}
+                                    className="text-xs font-semibold"
+                                  />
+                                </div>
                               </div>
-                            </div>
+                            )}
+
+                            {preferences.whatsAppProvider === 'meta' && (
+                              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div className="space-y-2">
+                                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Meta Phone Number ID</label>
+                                  <Input
+                                    placeholder="e.g. 1029384756 (leave blank for platform default)"
+                                    value={preferences.metaPhoneNumberId}
+                                    onChange={(e) => setPreferences(p => ({ ...p, metaPhoneNumberId: e.target.value }))}
+                                    className="text-xs font-semibold"
+                                  />
+                                </div>
+
+                                <div className="space-y-2">
+                                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Meta Access Token</label>
+                                  <Input
+                                    type="password"
+                                    placeholder="EAA... (leave blank for platform default)"
+                                    value={preferences.metaAccessToken}
+                                    onChange={(e) => setPreferences(p => ({ ...p, metaAccessToken: e.target.value }))}
+                                    className="text-xs font-semibold"
+                                  />
+                                </div>
+                              </div>
+                            )}
                           </div>
                         </div>
                       </div>

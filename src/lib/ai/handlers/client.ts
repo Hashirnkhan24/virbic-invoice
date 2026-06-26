@@ -1,5 +1,6 @@
 import { prisma } from '../../prisma';
 import { ConversationContext, ClientIntent } from '../intents';
+import { sendWhatsAppMessage } from '../../whatsapp/outbound';
 
 export async function handleClientIntent(
   intent: ClientIntent,
@@ -12,6 +13,9 @@ export async function handleClientIntent(
 
     case ClientIntent.SUBMIT_UTR:
       return handleUTRSubmission(entities.utr, context);
+
+    case ClientIntent.SUBMIT_PAYMENT_PROOF:
+      return handlePaymentProofSubmission(entities.utr, entities.amount, entities.screenshotUrl, context);
 
     case ClientIntent.QUERY_INVOICES:
       return handleClientInvoiceQuery(context);
@@ -134,3 +138,88 @@ ${list.join('\n')}`;
 
   return { response, actions: [] };
 }
+
+async function handlePaymentProofSubmission(
+  utr: string | null,
+  amount: number | null,
+  screenshotUrl: string | null,
+  context: ConversationContext
+) {
+  // Find oldest unpaid invoice
+  const invoice = await prisma.invoice.findFirst({
+    where: {
+      clientId: context.clientId,
+      status: { in: ['SENT', 'OVERDUE', 'PARTIAL'] }
+    },
+    orderBy: { dueDate: 'asc' },
+    include: { client: true }
+  });
+
+  if (!invoice) {
+    return {
+      response: 'I received your payment proof, but I could not find any active outstanding invoice to associate this payment with. Please contact the business owner directly.',
+      actions: []
+    };
+  }
+
+  const amountPaid = amount || (Number(invoice.grandTotal) - Number(invoice.amountPaid));
+  const finalUtr = utr || `MOCK_WA_${Math.random().toString(36).substring(2, 10).toUpperCase()}`;
+
+  // Check user preference for auto-approval
+  const userPrefs = await prisma.userPreference.findUnique({
+    where: { userId: invoice.userId }
+  });
+
+  const autoApproveEnabled = userPrefs ? userPrefs.upiAutoApproveEnabled : false;
+  const autoApproveHours = userPrefs ? userPrefs.upiAutoApproveHours : 72;
+  const autoApproveAt = autoApproveEnabled 
+    ? new Date(Date.now() + autoApproveHours * 60 * 60 * 1000) 
+    : null;
+
+  const action = async () => {
+    // 1. Create payment proof record
+    const proof = await prisma.paymentProof.create({
+      data: {
+        invoiceId: invoice.id,
+        userId: invoice.userId,
+        utr: finalUtr,
+        screenshotUrl,
+        amountPaid,
+        status: 'PENDING',
+        autoApproveAt
+      }
+    });
+
+    // 2. Notify business owner via WhatsApp
+    const freelancer = await prisma.user.findUnique({
+      where: { id: invoice.userId }
+    });
+
+    if (freelancer && freelancer.phone) {
+      try {
+        const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
+        const formattedAmount = `₹${amountPaid.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`;
+        const notificationText = `🔔 *New Payment Proof Submitted!*\n\n` +
+          `Client *${invoice.client.name}* has submitted payment proof for Invoice *${invoice.invoiceNumber}*.\n` +
+          `• *Amount*: ${formattedAmount}\n` +
+          `• *UTR*: ${finalUtr}\n\n` +
+          `Verify this in your bank account and approve it in your dashboard:\n${appUrl}/payments`;
+
+        await sendWhatsAppMessage({
+          to: freelancer.phone,
+          body: notificationText,
+          userId: freelancer.id
+        });
+      } catch (waErr: any) {
+        console.error('[AI Verification Alert] Failed to notify freelancer via WhatsApp:', waErr.message);
+      }
+    }
+  };
+
+  const formattedAmount = `₹${amountPaid.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`;
+  return {
+    response: `✅ *Receipt Received!*\n\nThank you! Your payment proof of *${formattedAmount}* for Invoice *${invoice.invoiceNumber}* has been submitted (UTR: ${finalUtr}).\n\nThe business owner has been notified and will verify this shortly.`,
+    actions: [action]
+  };
+}
+

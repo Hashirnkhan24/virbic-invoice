@@ -79,6 +79,34 @@ async function processWebhookEvent(event: any) {
 
   // Incoming Message routing
   const normalizedFrom = normalizePhone(event.from);
+  const cleanBody = event.body?.trim() || '';
+
+  // Intercept account registration command
+  if (cleanBody.toLowerCase().startsWith('register ')) {
+    const userId = cleanBody.slice(9).trim();
+    const targetUser = await prisma.user.findUnique({
+      where: { id: userId }
+    });
+
+    if (targetUser) {
+      // Link the phone number! (store without the '+' prefix for consistency)
+      const cleanPhone = normalizedFrom.replace('+', '');
+      await prisma.user.update({
+        where: { id: userId },
+        data: { phone: cleanPhone }
+      });
+
+      console.log(`[WhatsApp Link] Successfully linked phone ${normalizedFrom} to user ${targetUser.name}`);
+
+      // Send confirmation message
+      await sendWhatsAppMessage({
+        to: normalizedFrom,
+        body: `✅ *Account Connected!* \n\nHi ${targetUser.name || 'there'}, your BillCraft account has been successfully linked to this WhatsApp chat.\n\nNow you can type commands like:\n• *"banao 4000 for Acme"* (create invoice)\n• *"kitna bacha hai"* (check outstanding)\n• *"help"* (view all commands)\n\nGive it a try!`,
+        userId: targetUser.id
+      });
+      return;
+    }
+  }
 
   // 1. Check if the sender is a User/Business Owner
   const user = await prisma.user.findFirst({
@@ -132,8 +160,6 @@ async function processWebhookEvent(event: any) {
       });
     }
 
-    // Save message to DB
-    const cleanBody = event.body?.trim() || '';
     const message = await prisma.whatsAppMessage.create({
       data: {
         conversationId: conversation.id,
@@ -200,7 +226,6 @@ async function processWebhookEvent(event: any) {
     });
   }
 
-  const cleanBody = event.body?.trim() || '';
   const upperBody = cleanBody.toUpperCase();
 
   // 3. Opt-in / Opt-out compliance

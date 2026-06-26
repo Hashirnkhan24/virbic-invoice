@@ -7,6 +7,9 @@ import { handleClientIntent } from './handlers/client';
 import { sendWhatsAppMessage } from '../whatsapp/outbound';
 import { UserIntent, ClientIntent } from './intents';
 import { processVoiceMessage } from './voice';
+import { downloadWhatsAppMedia, parseReceiptVision } from './vision-parser';
+import fs from 'fs';
+import path from 'path';
 
 export async function processMessage(
   messageId: string,
@@ -37,6 +40,34 @@ export async function processMessage(
       });
     } catch (voiceErr: any) {
       console.error(`[AI Voice Process Error] Failed to transcribe:`, voiceErr.message);
+    }
+  }
+
+  // Handle client screenshot upload via WhatsApp (AI Vision OCR)
+  let visionExtractedData = null;
+  if (message.messageType === 'IMAGE' && message.mediaUrl && actor === 'CLIENT') {
+    try {
+      const providerType = process.env.WHATSAPP_PROVIDER || 'twilio';
+      const { buffer, extension } = await downloadWhatsAppMedia(message.mediaUrl, providerType);
+      
+      const proofId = 'proof_' + Math.random().toString(36).substring(2, 15);
+      const filename = `${proofId}.${extension}`;
+      const uploadDir = path.join(process.cwd(), 'public', 'uploads', 'proofs');
+      if (!fs.existsSync(uploadDir)) {
+        fs.mkdirSync(uploadDir, { recursive: true });
+      }
+      const filepath = path.join(uploadDir, filename);
+      fs.writeFileSync(filepath, buffer);
+      
+      const ocrResult = await parseReceiptVision(buffer, extension);
+      if (ocrResult.utr || ocrResult.amount) {
+        visionExtractedData = {
+          ...ocrResult,
+          screenshotUrl: `/uploads/proofs/${filename}`
+        };
+      }
+    } catch (err: any) {
+      console.error('[AI Vision OCR Process Error] Failed to process screenshot:', err.message || err);
     }
   }
 
@@ -93,7 +124,23 @@ export async function processMessage(
     }
 
     // Parse new intent
-    parsed = await parseIntent(contentText, context);
+    if (visionExtractedData) {
+      parsed = {
+        intent: ClientIntent.SUBMIT_PAYMENT_PROOF,
+        actor: 'CLIENT',
+        entities: {
+          utr: visionExtractedData.utr,
+          amount: visionExtractedData.amount,
+          screenshotUrl: visionExtractedData.screenshotUrl
+        },
+        confidence: 0.95,
+        missingFields: [],
+        requiresConfirmation: false,
+        suggestedResponse: ''
+      };
+    } else {
+      parsed = await parseIntent(contentText, context);
+    }
 
     // Track processing metrics
     const duration = Date.now() - startTime;

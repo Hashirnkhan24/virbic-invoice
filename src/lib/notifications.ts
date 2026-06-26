@@ -62,5 +62,20 @@ export async function sendUserNotification({
     }
   }
 
+  // 3. Send WhatsApp notification if user has phone linked
+  if (user && user.phone) {
+    try {
+      const { sendWhatsAppMessage } = await import('./whatsapp/outbound');
+      await sendWhatsAppMessage({
+        to: user.phone,
+        body: `🔔 *New Notification Alert!*\n\n*${title}*\n${body}`,
+        userId: user.id
+      });
+    } catch (waErr: any) {
+      console.error('[NOTIFICATIONS] Failed to send WhatsApp alert to user:', waErr.message);
+    }
+  }
+
   return notification;
 }
+

@@ -3,6 +3,7 @@ import { Webhook } from 'svix';
 import { WebhookEvent } from '@clerk/nextjs/server';
 import { prisma } from '@/lib/prisma';
 import { DEFAULT_REMINDER_TEMPLATES } from '@/lib/reminder-defaults';
+import { sendWelcomeEmail } from '@/lib/email-service';
 
 export async function POST(req: NextRequest) {
   const webhookSecret = process.env.CLERK_WEBHOOK_SECRET;
@@ -117,6 +118,13 @@ export async function POST(req: NextRequest) {
       }
 
       console.log(`✅ Created user ${clerkId} (${email}), FREE subscription, and default reminder templates`);
+
+      // Trigger welcome email asynchronously
+      if (email) {
+        sendWelcomeEmail(email, name).catch((err) => {
+          console.error('[CLERK WEBHOOK] Failed to send welcome email:', err);
+        });
+      }
     }
 
     else if (eventType === 'user.updated') {

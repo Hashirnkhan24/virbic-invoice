@@ -34,22 +34,6 @@ OUTPUT FORMAT:
 }`;
 
 export async function parseIntent(input: string, context?: ConversationContext): Promise<ParsedIntent> {
-  const isOpenRouter = !!process.env.OPENROUTER_API_KEY;
-  const apiKey = process.env.OPENROUTER_API_KEY || process.env.OPENAI_API_KEY || 'mock-key';
-  const baseURL = isOpenRouter ? 'https://openrouter.ai/api/v1' : undefined;
-  const model = isOpenRouter 
-    ? (process.env.OPENROUTER_MODEL || 'google/gemini-2.5-flash:free')
-    : (process.env.OPENAI_MODEL || 'gpt-4o-mini');
-
-  const openai = new OpenAI({
-    apiKey,
-    baseURL,
-    defaultHeaders: isOpenRouter ? {
-      'HTTP-Referer': 'https://virbic.com',
-      'X-Title': 'BillCraft'
-    } : undefined
-  });
-
   const messages: any[] = [
     { role: 'system', content: SYSTEM_PROMPT }
   ];
@@ -82,54 +66,164 @@ export async function parseIntent(input: string, context?: ConversationContext):
 
   messages.push({ role: 'user', content: input });
 
-  try {
-    const response = await openai.chat.completions.create({
-      model,
-      messages,
-      response_format: { type: 'json_object' },
-      temperature: 0.1,
-      max_tokens: 500
-    });
+  const providers = [
+    {
+      name: 'openai',
+      apiKey: process.env.OPEN_AI_API_KEY || process.env.OPENAI_API_KEY,
+      baseURL: undefined,
+      model: process.env.OPENAI_MODEL || 'gpt-4o-mini'
+    },
+    {
+      name: 'gemini',
+      apiKey: process.env.GEMINI_API_KEY,
+      baseURL: 'https://generativelanguage.googleapis.com/v1beta/openai/',
+      model: process.env.GEMINI_MODEL || 'gemini-2.5-flash'
+    },
+    {
+      name: 'groq',
+      apiKey: process.env.GROQ_API_KEY,
+      baseURL: 'https://api.groq.com/openai/v1',
+      model: process.env.GROQ_MODEL || 'llama-3.3-70b-versatile'
+    }
+  ];
 
-    const content = response.choices[0]?.message?.content || '{}';
-    const parsed = JSON.parse(content);
-
-    // Normalize entities
-    const entities = normalizeEntities(parsed.entities || {});
-
-    // Ensure intent mapping matches enums
-    let intent: any = parsed.intent;
-    if (parsed.actor === 'CLIENT') {
-      if (!Object.values(ClientIntent).includes(intent)) {
-        intent = ClientIntent.UNKNOWN;
-      }
-    } else {
-      if (!Object.values(UserIntent).includes(intent)) {
-        intent = UserIntent.UNKNOWN;
-      }
+  for (const provider of providers) {
+    if (!provider.apiKey) {
+      console.warn(`[AI Intent Parser] Skipping ${provider.name} because API key is not configured.`);
+      continue;
     }
 
-    return {
-      intent,
-      actor: parsed.actor || (context?.actor || 'USER'),
-      entities,
-      confidence: parsed.confidence || 0.5,
-      missingFields: parsed.missingFields || [],
-      requiresConfirmation: parsed.requiresConfirmation || false,
-      suggestedResponse: parsed.clarificationNeeded || ''
-    };
-  } catch (error: any) {
-    console.error('[AI Intent Parser Error]', error);
-    return {
-      intent: (context?.actor === 'CLIENT' ? ClientIntent.UNKNOWN : UserIntent.UNKNOWN),
-      actor: context?.actor || 'USER',
-      entities: {},
-      confidence: 0,
-      missingFields: [],
-      requiresConfirmation: false,
-      suggestedResponse: 'Sorry, I encountered an issue parsing your message. Please try again.'
-    };
+    try {
+      console.log(`[AI Intent Parser] Attempting parse using ${provider.name} (${provider.model})...`);
+      const openai = new OpenAI({
+        apiKey: provider.apiKey,
+        baseURL: provider.baseURL
+      });
+
+      const response = await openai.chat.completions.create({
+        model: provider.model,
+        messages,
+        response_format: { type: 'json_object' },
+        temperature: 0.1,
+        max_tokens: 500
+      });
+
+      const content = response.choices[0]?.message?.content || '{}';
+      const parsed = JSON.parse(content);
+      console.log(`[AI Intent Parser] Successfully parsed with ${provider.name}!`);
+
+      // Normalize entities
+      const entities = normalizeEntities(parsed.entities || {});
+
+      // Ensure intent mapping matches enums
+      let intent: any = parsed.intent;
+      if (parsed.actor === 'CLIENT') {
+        if (!Object.values(ClientIntent).includes(intent)) {
+          intent = ClientIntent.UNKNOWN;
+        }
+      } else {
+        if (!Object.values(UserIntent).includes(intent)) {
+          intent = UserIntent.UNKNOWN;
+        }
+      }
+
+      return {
+        intent,
+        actor: parsed.actor || (context?.actor || 'USER'),
+        entities,
+        confidence: parsed.confidence || 0.5,
+        missingFields: parsed.missingFields || [],
+        requiresConfirmation: parsed.requiresConfirmation || false,
+        suggestedResponse: parsed.clarificationNeeded || ''
+      };
+    } catch (error: any) {
+      console.error(`[AI Intent Parser Error] Provider ${provider.name} failed:`, error.message || error);
+      // Fall back to next provider in the chain
+    }
   }
+
+  // All API providers failed (or none are configured). Fallback to local rule-based parsing.
+  console.warn('[AI Intent Parser] All AI providers failed or were unconfigured. Falling back to local rule-based mock parser.');
+  return parseIntentLocally(input, context);
+}
+
+function parseIntentLocally(input: string, context?: ConversationContext): ParsedIntent {
+  const text = input.toLowerCase().trim();
+  const actor = context?.actor || 'USER';
+  
+  let intent: any = (actor === 'CLIENT' ? ClientIntent.UNKNOWN : UserIntent.UNKNOWN);
+  const entities: Record<string, any> = {
+    clientName: null,
+    amount: null,
+    description: null,
+    dueDate: null,
+    invoiceNumber: null,
+    utr: null,
+    dateRange: null
+  };
+  
+  // 1. Client specific flows
+  if (actor === 'CLIENT') {
+    if (text.includes('pay') || text.includes('upi') || text.includes('bhugtan')) {
+      intent = ClientIntent.REQUEST_PAYMENT_LINK;
+    } else if (text.includes('invoice') || text.includes('bill') || text.includes('details') || text.includes('rasid')) {
+      intent = ClientIntent.QUERY_INVOICES;
+    }
+    
+    // Extract UTR (12 digit number)
+    const utrMatch = text.match(/\b\d{12}\b/);
+    if (utrMatch) {
+      intent = ClientIntent.SUBMIT_UTR;
+      entities.utr = utrMatch[0];
+    }
+  } else {
+    // 2. User/Freelancer specific flows
+    if (text.includes('banao') || text.includes('create') || text.includes('generate') || text.includes('new invoice')) {
+      intent = UserIntent.CREATE_INVOICE;
+    } else if (text.includes('outstanding') || text.includes('kitna bacha') || text.includes('baki')) {
+      intent = UserIntent.QUERY_OUTSTANDING;
+    } else if (text.includes('revenue') || text.includes('kamaya') || text.includes('kamai') || text.includes('earning')) {
+      intent = UserIntent.QUERY_REVENUE;
+    } else if (text.includes('remind') || text.includes('yadaasht') || text.includes('bhejo') || text.includes('send reminder')) {
+      intent = UserIntent.SEND_REMINDER;
+    }
+    
+    // Extract amount
+    const amountMatch = text.match(/\b\d+(?:k|kilo|k)?\b/);
+    if (amountMatch) {
+      const val = amountMatch[0];
+      if (val.endsWith('k')) {
+        entities.amount = parseInt(val) * 1000;
+      } else {
+        const parsedAmt = parseInt(val);
+        if (!isNaN(parsedAmt)) {
+          entities.amount = parsedAmt;
+        }
+      }
+    }
+    
+    // Extract client name (e.g., "for Acme" or "to Rohan")
+    const clientMatch = text.match(/(?:for|to|ko|naam)\s+([a-zA-Z0-9\s]+)/);
+    if (clientMatch) {
+      entities.clientName = clientMatch[1].trim();
+    }
+    
+    // Extract invoice number if present
+    const invMatch = text.match(/inv-\d{4}-\d{2}-\d+/i) || text.match(/inv\/\d{4}-\d{2}\/\d+/i);
+    if (invMatch) {
+      entities.invoiceNumber = invMatch[0].toUpperCase();
+    }
+  }
+  
+  return {
+    intent,
+    actor,
+    entities,
+    confidence: 0.8,
+    missingFields: [],
+    requiresConfirmation: intent === UserIntent.CREATE_INVOICE,
+    suggestedResponse: ''
+  };
 }
 
 function normalizeEntities(entities: Record<string, any>): Record<string, any> {

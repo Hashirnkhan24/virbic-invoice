@@ -37,6 +37,7 @@ export default async function SettingsPage() {
     email: user.email,
     name: user.name,
     avatar: user.avatar,
+    phone: user.phone,
     emailInvoiceSent: user.emailInvoiceSent,
     emailPaymentReceived: user.emailPaymentReceived,
     emailInvoiceOverdue: user.emailInvoiceOverdue,
