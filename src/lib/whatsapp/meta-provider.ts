@@ -22,25 +22,33 @@ export class MetaProvider implements WhatsAppProvider {
     const cleanTo = to.replace(/\D/g, ''); // Meta API expects numbers only (without + or sandbox formatting)
 
     const url = `https://graph.facebook.com/v20.0/${this.phoneNumberId}/messages`;
+    const payload = {
+      messaging_product: 'whatsapp',
+      recipient_type: 'individual',
+      to: cleanTo,
+      type: 'text',
+      text: {
+        preview_url: false,
+        body
+      }
+    };
+
+    console.log(`[Meta WhatsApp] Outbound Request: POST ${url}`);
+    console.log(`[Meta WhatsApp] Request Payload:`, JSON.stringify(payload, null, 2));
+
     const response = await fetch(url, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${this.accessToken}`,
         'Content-Type': 'application/json'
       },
-      body: JSON.stringify({
-        messaging_product: 'whatsapp',
-        recipient_type: 'individual',
-        to: cleanTo,
-        type: 'text',
-        text: {
-          preview_url: false,
-          body
-        }
-      })
+      body: JSON.stringify(payload)
     });
 
     const data = await response.json() as any;
+    console.log(`[Meta WhatsApp] Response Status: ${response.status}`);
+    console.log(`[Meta WhatsApp] Response Data:`, JSON.stringify(data, null, 2));
+
     if (!response.ok) {
       throw new Error(data.error?.message || `Meta API send text failed with status ${response.status}`);
     }
@@ -59,25 +67,33 @@ export class MetaProvider implements WhatsAppProvider {
     const cleanTo = to.replace(/\D/g, '');
 
     const url = `https://graph.facebook.com/v20.0/${this.phoneNumberId}/messages`;
+    const payload = {
+      messaging_product: 'whatsapp',
+      recipient_type: 'individual',
+      to: cleanTo,
+      type: mediaType,
+      [mediaType]: {
+        link: mediaUrl,
+        caption: body
+      }
+    };
+
+    console.log(`[Meta WhatsApp] Outbound Media Request: POST ${url}`);
+    console.log(`[Meta WhatsApp] Request Payload:`, JSON.stringify(payload, null, 2));
+
     const response = await fetch(url, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${this.accessToken}`,
         'Content-Type': 'application/json'
       },
-      body: JSON.stringify({
-        messaging_product: 'whatsapp',
-        recipient_type: 'individual',
-        to: cleanTo,
-        type: mediaType,
-        [mediaType]: {
-          link: mediaUrl,
-          caption: body
-        }
-      })
+      body: JSON.stringify(payload)
     });
 
     const data = await response.json() as any;
+    console.log(`[Meta WhatsApp] Response Status: ${response.status}`);
+    console.log(`[Meta WhatsApp] Response Data:`, JSON.stringify(data, null, 2));
+
     if (!response.ok) {
       throw new Error(data.error?.message || `Meta API send media failed with status ${response.status}`);
     }
@@ -112,30 +128,38 @@ export class MetaProvider implements WhatsAppProvider {
       }
     }));
 
+    const payload = {
+      messaging_product: 'whatsapp',
+      recipient_type: 'individual',
+      to: cleanTo,
+      type: 'interactive',
+      interactive: {
+        type: 'button',
+        body: {
+          text: body
+        },
+        action: {
+          buttons: formattedButtons
+        }
+      }
+    };
+
+    console.log(`[Meta WhatsApp] Outbound Interactive Request: POST ${url}`);
+    console.log(`[Meta WhatsApp] Request Payload:`, JSON.stringify(payload, null, 2));
+
     const response = await fetch(url, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${this.accessToken}`,
         'Content-Type': 'application/json'
       },
-      body: JSON.stringify({
-        messaging_product: 'whatsapp',
-        recipient_type: 'individual',
-        to: cleanTo,
-        type: 'interactive',
-        interactive: {
-          type: 'button',
-          body: {
-            text: body
-          },
-          action: {
-            buttons: formattedButtons
-          }
-        }
-      })
+      body: JSON.stringify(payload)
     });
 
     const data = await response.json() as any;
+    console.log(`[Meta WhatsApp] Response Status: ${response.status}`);
+    console.log(`[Meta WhatsApp] Response Data:`, JSON.stringify(data, null, 2));
+
     if (!response.ok) {
       throw new Error(data.error?.message || `Meta API send interactive failed with status ${response.status}`);
     }
