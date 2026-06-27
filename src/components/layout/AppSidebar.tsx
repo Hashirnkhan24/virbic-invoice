@@ -16,7 +16,6 @@ import {
   ChevronRight,
   Inbox,
 } from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
 import { cn } from '@/lib/utils';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
@@ -77,48 +76,23 @@ export default function AppSidebar({
     },
   ];
 
-  // Motion animation variables
-  const sidebarVariants = {
-    open: { x: 0, transition: { type: 'spring' as const, stiffness: 300, damping: 30 } },
-    closed: { x: '-100%', transition: { type: 'spring' as const, stiffness: 300, damping: 30 } },
-  };
-
-  const itemContainerVariants = {
-    animate: {
-      transition: {
-        staggerChildren: 0.05,
-      },
-    },
-  };
-
-  const navItemVariants = {
-    initial: { opacity: 0, x: -10 },
-    animate: { opacity: 1, x: 0, transition: { duration: 0.3 } },
-  };
-
   return (
     <>
       {/* Mobile Backdrop Overlay */}
-      <AnimatePresence>
-        {isOpen && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 0.4 }}
-            exit={{ opacity: 0 }}
-            onClick={onClose}
-            className="fixed inset-0 z-40 bg-black md:hidden"
-          />
+      <div
+        onClick={onClose}
+        className={cn(
+          "fixed inset-0 z-40 bg-black/40 md:hidden transition-opacity duration-300 ease-in-out",
+          isOpen ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"
         )}
-      </AnimatePresence>
+      />
 
       {/* Main Sidebar */}
-      <motion.aside
-        variants={sidebarVariants}
-        animate={isOpen ? 'open' : 'closed'}
-        initial="closed"
+      <aside
         className={cn(
-          "fixed top-0 bottom-0 left-0 z-50 flex flex-col bg-white dark:bg-slate-900 border-r border-slate-200/60 dark:border-slate-800/60 shadow-sm md:translate-x-0 transition-all duration-300 ease-in-out",
-          isCollapsed ? "md:w-[70px] w-[260px]" : "w-[260px]"
+          "fixed top-0 bottom-0 left-0 z-50 flex flex-col bg-white dark:bg-slate-900 border-r border-slate-200/60 dark:border-slate-800/60 shadow-sm transition-all duration-300 ease-in-out md:translate-x-0",
+          isCollapsed ? "md:w-[70px]" : "md:w-[260px]",
+          isOpen ? "translate-x-0 w-[260px]" : "-translate-x-full w-[260px]"
         )}
       >
         {/* Header Branding */}
@@ -148,12 +122,7 @@ export default function AppSidebar({
 
         {/* Navigation Items */}
         <nav className={cn("flex-1 py-6 overflow-y-auto transition-all duration-300", isCollapsed ? "md:px-2 px-4" : "px-4")}>
-          <motion.ul
-            variants={itemContainerVariants}
-            initial="initial"
-            animate="animate"
-            className="space-y-1.5"
-          >
+          <ul className="space-y-1.5">
             {navItems.map((item) => {
               const Icon = item.icon;
               const isActive =
@@ -161,7 +130,7 @@ export default function AppSidebar({
                 (item.href !== '/dashboard' && pathname.startsWith(item.href + '/'));
 
               return (
-                <motion.li key={item.label} variants={navItemVariants}>
+                <li key={item.label}>
                   <Link
                     href={item.href}
                     title={isCollapsed ? item.label : undefined}
@@ -201,10 +170,10 @@ export default function AppSidebar({
                       )
                     )}
                   </Link>
-                </motion.li>
+                </li>
               );
             })}
-          </motion.ul>
+          </ul>
         </nav>
 
         {/* Collapse Toggle Bar (Desktop Only) */}
@@ -268,7 +237,7 @@ export default function AppSidebar({
             )}
           </div>
         </div>
-      </motion.aside>
+      </aside>
     </>
   );
 }

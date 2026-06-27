@@ -149,6 +149,51 @@ export default function BusinessForm({
   const watchLogo = watch('logo');
   const watchSignature = watch('signature');
   const watchState = watch('state');
+  const watchPincode = watch('pincode');
+
+  // Auto-fill state from GSTIN
+  useEffect(() => {
+    if (watchGstin && watchGstin.length >= 2) {
+      const stateCode = watchGstin.substring(0, 2);
+      const matchedState = INDIAN_STATES.find(s => s.gstCode === stateCode);
+      if (matchedState) {
+        setValue('state', matchedState.name);
+        setStateSearch(matchedState.name);
+      }
+    }
+  }, [watchGstin, setValue]);
+
+  // Auto-fill city and state from pincode
+  useEffect(() => {
+    if (watchPincode && watchPincode.length === 6 && /^\d+$/.test(watchPincode)) {
+      const fetchPincodeDetails = async () => {
+        try {
+          const res = await fetch(`https://api.postalpincode.in/pincode/${watchPincode}`);
+          const data = await res.json();
+          if (data && data[0] && data[0].Status === 'Success' && data[0].PostOffice && data[0].PostOffice.length > 0) {
+            const office = data[0].PostOffice[0];
+            const postalState = office.State;
+            const postalDistrict = office.District;
+            
+            const matchedState = INDIAN_STATES.find(
+              s => s.name.toLowerCase() === postalState.toLowerCase()
+            );
+
+            if (matchedState) {
+              setValue('state', matchedState.name);
+              setStateSearch(matchedState.name);
+            }
+            if (postalDistrict) {
+              setValue('city', postalDistrict);
+            }
+          }
+        } catch (err) {
+          console.error('Error fetching pincode details:', err);
+        }
+      };
+      fetchPincodeDetails();
+    }
+  }, [watchPincode, setValue]);
 
   // Handle click outside for searchable state dropdown
   useEffect(() => {

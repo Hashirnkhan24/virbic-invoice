@@ -48,6 +48,7 @@ import { useGetClients, useCreateClient } from '@/hooks/useClients';
 import ItemCatalogSelector from '@/components/items/ItemCatalogSelector';
 import ClientForm from '@/components/clients/ClientForm';
 import InvoicePreview from '@/components/invoice-templates/InvoicePreview';
+import { DatePicker } from '@/components/ui/date-picker';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { INDIAN_STATES } from '@/lib/constants';
 import { formatCurrency } from '@/lib/helpers';
@@ -422,16 +423,20 @@ export default function NewInvoicePage() {
               {/* Currency Dropdown Selector */}
               <div className="flex items-center gap-2 self-start sm:self-auto">
                 <span className="text-xs font-semibold text-slate-450">Currency:</span>
-                <select
+                <Select
                   value={formState.currency}
-                  onChange={(e) => actions.setCurrency(e.target.value)}
-                  className="h-8 text-xs font-bold px-2 py-1 bg-white border border-slate-350 dark:border-slate-800 dark:bg-slate-950 rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-500/20"
+                  onValueChange={(val) => actions.setCurrency(val || 'INR')}
                 >
-                  <option value="INR">🇮🇳 INR (₹)</option>
-                  <option value="USD">🇺🇸 USD ($)</option>
-                  <option value="EUR">🇪🇺 EUR (€)</option>
-                  <option value="GBP">🇬🇧 GBP (£)</option>
-                </select>
+                  <SelectTrigger className="h-8 text-xs font-bold px-3 border-slate-355 dark:border-slate-800 bg-white dark:bg-slate-950 rounded-lg w-[110px]">
+                    <SelectValue placeholder="Select Currency" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="INR" className="text-xs font-bold cursor-pointer">🇮🇳 INR (₹)</SelectItem>
+                    <SelectItem value="USD" className="text-xs font-bold cursor-pointer">🇺🇸 USD ($)</SelectItem>
+                    <SelectItem value="EUR" className="text-xs font-bold cursor-pointer">🇪🇺 EUR (€)</SelectItem>
+                    <SelectItem value="GBP" className="text-xs font-bold cursor-pointer">🇬🇧 GBP (£)</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
             </div>
 
@@ -644,32 +649,20 @@ export default function NewInvoicePage() {
               {/* Issue Date */}
               <div>
                 <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Issue Date</label>
-                <input
-                  type="date"
-                  value={formState.issueDate.toISOString().split('T')[0]}
-                  onChange={(e) => {
-                    const d = new Date(e.target.value || Date.now());
-                    actions.updateField('issueDate', d);
-                  }}
-                  className="w-full h-9 text-sm px-3 border border-slate-350 dark:border-slate-800 dark:bg-slate-950 rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-500/20 font-mono"
+                <DatePicker
+                  date={formState.issueDate}
+                  setDate={(d) => actions.updateField('issueDate', d)}
                 />
               </div>
 
               {/* Due Date */}
               <div>
                 <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Due Date</label>
-                <input
-                  type="date"
-                  value={formState.dueDate.toISOString().split('T')[0]}
-                  onChange={(e) => {
-                    const d = new Date(e.target.value || Date.now());
-                    actions.updateField('dueDate', d);
-                  }}
+                <DatePicker
+                  date={formState.dueDate}
+                  setDate={(d) => actions.updateField('dueDate', d)}
                   className={cn(
-                    "w-full h-9 text-sm px-3 border rounded-lg focus:outline-none focus:ring-2 font-mono",
-                    showValidationErrors && formState.dueDate < formState.issueDate
-                      ? "border-red-500 focus:border-red-500 focus:ring-red-500/20"
-                      : "border-slate-350 dark:border-slate-800 dark:bg-slate-950 focus:ring-sky-500/20"
+                    showValidationErrors && formState.dueDate < formState.issueDate && "border-red-500 focus:border-red-500 focus:ring-red-500/20"
                   )}
                 />
                 {showValidationErrors && formState.dueDate < formState.issueDate && (
@@ -683,18 +676,22 @@ export default function NewInvoicePage() {
               {/* Place of Supply */}
               <div>
                 <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Place of Supply</label>
-                <select
-                  value={formState.placeOfSupply}
-                  onChange={(e) => actions.setPlaceOfSupply(e.target.value)}
-                  className="w-full h-9 text-sm px-3 bg-white border border-slate-350 dark:border-slate-800 dark:bg-slate-950 rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-500/20"
+                <Select
+                  value={formState.placeOfSupply || 'none'}
+                  onValueChange={(val) => actions.setPlaceOfSupply(val === 'none' || !val ? '' : val)}
                 >
-                  <option value="">Select Supply State...</option>
-                  {INDIAN_STATES.map((state) => (
-                    <option key={state.code} value={state.name}>
-                      {state.name} ({state.code})
-                    </option>
-                  ))}
-                </select>
+                  <SelectTrigger className="w-full h-9 text-sm border border-slate-350 dark:border-slate-800 bg-white dark:bg-slate-950 rounded-lg focus:outline-none">
+                    <SelectValue placeholder="Select Supply State..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none" className="text-xs font-semibold cursor-pointer">Select Supply State...</SelectItem>
+                    {INDIAN_STATES.map((state) => (
+                      <SelectItem key={state.code} value={state.name} className="text-xs font-semibold cursor-pointer">
+                        {state.name} ({state.code})
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
 
             </div>

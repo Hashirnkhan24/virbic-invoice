@@ -13,6 +13,7 @@ const itemSchema = z.object({
   rate: z.coerce.number().min(0, 'Rate must be greater than or equal to 0'),
   gstRate: z.coerce.number().default(18.00),
   unit: z.string().default('PCS'),
+  isService: z.boolean().default(true),
   businessId: z.string().optional().nullable().or(z.literal('')),
 });
 
@@ -88,6 +89,7 @@ export async function POST(request: NextRequest) {
         rate: validatedData.rate,
         gstRate: validatedData.gstRate,
         unit: validatedData.unit,
+        isService: validatedData.isService,
         businessId: validatedData.businessId || null,
         userId: user.id,
       },

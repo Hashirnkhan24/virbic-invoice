@@ -232,7 +232,17 @@ export async function POST(request: NextRequest) {
       const hsnIndex = headers.indexOf('hsncode') !== -1 ? headers.indexOf('hsncode') : headers.indexOf('hsn');
       const gstIndex = headers.indexOf('gstrate') !== -1 ? headers.indexOf('gstrate') : headers.indexOf('gst');
       const unitIndex = headers.indexOf('unit');
-      const serviceIndex = headers.indexOf('isservice');
+      
+      // Look for type column aliases
+      const typeAliases = ['type', 'item type', 'category', 'product/service', 'product or service', 'isservice', 'is_service'];
+      let serviceIndex = -1;
+      for (const alias of typeAliases) {
+        const idx = headers.indexOf(alias);
+        if (idx !== -1) {
+          serviceIndex = idx;
+          break;
+        }
+      }
 
       for (const row of dataRows) {
         const name = row[nameIndex];
@@ -240,7 +250,40 @@ export async function POST(request: NextRequest) {
         if (!name || isNaN(rateVal)) continue;
 
         const gstRateVal = gstIndex !== -1 ? parseFloat(row[gstIndex]) : 18.00;
-        const isService = serviceIndex !== -1 ? row[serviceIndex]?.toLowerCase() === 'true' : true;
+        
+        let isService = true;
+        const hsnCode = (hsnIndex !== -1 && row[hsnIndex]) ? row[hsnIndex].trim() : '';
+        const unit = (unitIndex !== -1 && row[unitIndex]) ? row[unitIndex].toLowerCase().trim() : '';
+        const typeStr = (serviceIndex !== -1 && row[serviceIndex]) ? row[serviceIndex].toLowerCase().trim() : '';
+
+        if (typeStr) {
+          const isServiceTerm = ['service', 'services', 'serv', 's', 'yes', 'true', '1'].includes(typeStr);
+          const isProductTerm = ['product', 'products', 'goods', 'good', 'prod', 'p', 'g', 'no', 'false', '0'].includes(typeStr);
+
+          if (isServiceTerm) {
+            isService = true;
+          } else if (isProductTerm) {
+            isService = false;
+          } else {
+            // Unrecognized term: Fallback to HSN/SAC detection
+            if (hsnCode.startsWith('99')) {
+              isService = true;
+            } else if (unit && ['hrs', 'hr', 'day', 'days', 'mth', 'months', 'week', 'weeks'].includes(unit)) {
+              isService = true;
+            } else {
+              isService = false;
+            }
+          }
+        } else {
+          // Missing type mapping or value: Fallback to HSN/SAC detection
+          if (hsnCode.startsWith('99')) {
+            isService = true;
+          } else if (unit && ['hrs', 'hr', 'day', 'days', 'mth', 'months', 'week', 'weeks'].includes(unit)) {
+            isService = true;
+          } else {
+            isService = false; // Safe default
+          }
+        }
 
         await prisma.item.create({
           data: {

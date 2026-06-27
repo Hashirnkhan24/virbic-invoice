@@ -174,6 +174,90 @@ export default function ClientForm({
   const watchGstin = watch('gstin');
   const watchBillingState = watch('billingState');
   const watchShippingState = watch('shippingState');
+  const watchBillingPincode = watch('billingPincode');
+  const watchShippingPincode = watch('shippingPincode');
+
+  // Auto-fill state from GSTIN
+  useEffect(() => {
+    if (watchGstin && watchGstin.length >= 2) {
+      const stateCode = watchGstin.substring(0, 2);
+      const matchedState = INDIAN_STATES.find(s => s.gstCode === stateCode);
+      if (matchedState) {
+        setValue('billingState', matchedState.name);
+        if (sameAsBilling) {
+          setValue('shippingState', matchedState.name);
+        }
+      }
+    }
+  }, [watchGstin, sameAsBilling, setValue]);
+
+  // Auto-fill city and state from billing pincode
+  useEffect(() => {
+    if (watchBillingPincode && watchBillingPincode.length === 6 && /^\d+$/.test(watchBillingPincode)) {
+      const fetchPincodeDetails = async () => {
+        try {
+          const res = await fetch(`https://api.postalpincode.in/pincode/${watchBillingPincode}`);
+          const data = await res.json();
+          if (data && data[0] && data[0].Status === 'Success' && data[0].PostOffice && data[0].PostOffice.length > 0) {
+            const office = data[0].PostOffice[0];
+            const postalState = office.State;
+            const postalDistrict = office.District;
+            
+            const matchedState = INDIAN_STATES.find(
+              s => s.name.toLowerCase() === postalState.toLowerCase()
+            );
+
+            if (matchedState) {
+              setValue('billingState', matchedState.name);
+              if (sameAsBilling) {
+                setValue('shippingState', matchedState.name);
+              }
+            }
+            if (postalDistrict) {
+              setValue('billingCity', postalDistrict);
+              if (sameAsBilling) {
+                setValue('shippingCity', postalDistrict);
+              }
+            }
+          }
+        } catch (err) {
+          console.error('Error fetching pincode details:', err);
+        }
+      };
+      fetchPincodeDetails();
+    }
+  }, [watchBillingPincode, sameAsBilling, setValue]);
+
+  // Auto-fill city and state from shipping pincode
+  useEffect(() => {
+    if (!sameAsBilling && watchShippingPincode && watchShippingPincode.length === 6 && /^\d+$/.test(watchShippingPincode)) {
+      const fetchPincodeDetails = async () => {
+        try {
+          const res = await fetch(`https://api.postalpincode.in/pincode/${watchShippingPincode}`);
+          const data = await res.json();
+          if (data && data[0] && data[0].Status === 'Success' && data[0].PostOffice && data[0].PostOffice.length > 0) {
+            const office = data[0].PostOffice[0];
+            const postalState = office.State;
+            const postalDistrict = office.District;
+            
+            const matchedState = INDIAN_STATES.find(
+              s => s.name.toLowerCase() === postalState.toLowerCase()
+            );
+
+            if (matchedState) {
+              setValue('shippingState', matchedState.name);
+            }
+            if (postalDistrict) {
+              setValue('shippingCity', postalDistrict);
+            }
+          }
+        } catch (err) {
+          console.error('Error fetching pincode details:', err);
+        }
+      };
+      fetchPincodeDetails();
+    }
+  }, [watchShippingPincode, sameAsBilling, setValue]);
 
   // Reset form when initialData changes
   useEffect(() => {

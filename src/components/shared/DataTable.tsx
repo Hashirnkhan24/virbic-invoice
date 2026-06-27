@@ -42,7 +42,7 @@ export default function DataTable<T extends { id: string | number }>({
   const emptyDesc = emptyState?.description ?? 'Get started by creating your first entry.';
 
   return (
-    <div className="w-full border border-slate-200/60 dark:border-slate-800/60 bg-white dark:bg-slate-900 rounded-xl shadow-sm overflow-hidden animate-fade-in">
+    <div className="w-full border border-slate-200/60 dark:border-slate-800/60 bg-white dark:bg-slate-900 rounded-xl shadow-sm overflow-x-auto scrollbar-thin animate-fade-in">
       <Table>
         <TableHeader className="bg-slate-50/50 dark:bg-slate-800/30">
           <TableRow className="hover:bg-transparent border-b border-slate-200/60 dark:border-slate-800/60">
