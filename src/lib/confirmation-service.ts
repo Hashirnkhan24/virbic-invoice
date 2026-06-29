@@ -180,11 +180,12 @@ export async function sendPaymentConfirmation(options: PaymentConfirmationOption
           name: 'payment_confirmation',
           variables: [
             clientName,
-            amountPaid,
+            Number(payment.amount).toFixed(2),
             invoiceNumber,
             receiptLink,
             businessName
-          ]
+          ],
+          buttonVariables: [invoice.id]
         }
       });
       console.log(`[CONFIRMATION SERVICE] Payment receipt sent via WhatsApp to client ${invoice.client.name}`);

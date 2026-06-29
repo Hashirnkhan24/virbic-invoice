@@ -172,7 +172,8 @@ export class MetaProvider implements WhatsAppProvider {
     to: string,
     templateName: string,
     languageCode: string = 'en',
-    variables: string[]
+    variables: string[],
+    buttonVariables?: string[]
   ): Promise<{ messageId: string }> {
     this.ensureConfig();
     const cleanTo = to.replace(/\D/g, '');
@@ -182,6 +183,25 @@ export class MetaProvider implements WhatsAppProvider {
       type: 'text',
       text: v
     }));
+
+    const components: any[] = [
+      {
+        type: 'body',
+        parameters: parameters
+      }
+    ];
+
+    if (buttonVariables && buttonVariables.length > 0) {
+      components.push({
+        type: 'button',
+        sub_type: 'url',
+        index: '0',
+        parameters: buttonVariables.map(bv => ({
+          type: 'text',
+          text: bv
+        }))
+      });
+    }
 
     const payload = {
       messaging_product: 'whatsapp',
@@ -193,12 +213,7 @@ export class MetaProvider implements WhatsAppProvider {
         language: {
           code: languageCode
         },
-        components: [
-          {
-            type: 'body',
-            parameters: parameters
-          }
-        ]
+        components: components
       }
     };
 

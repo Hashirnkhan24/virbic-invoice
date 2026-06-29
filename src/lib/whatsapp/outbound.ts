@@ -18,7 +18,7 @@ export async function sendWhatsAppMessage({
   buttons?: Array<{ id: string; title: string }>;
   conversationId?: string;
   userId?: string;
-  template?: { name: string; variables: string[] };
+  template?: { name: string; variables: string[]; buttonVariables?: string[] };
 }): Promise<{ success: boolean; messageId?: string; error?: string }> {
   try {
     let providerConfig: any = undefined;
@@ -43,7 +43,7 @@ export async function sendWhatsAppMessage({
     let result: { messageId: string };
 
     if (template && provider.sendTemplate) {
-      result = await provider.sendTemplate(to, template.name, 'en', template.variables);
+      result = await provider.sendTemplate(to, template.name, 'en', template.variables, template.buttonVariables);
     } else if (mediaUrl && mediaType) {
       result = await provider.sendMedia(to, body, mediaUrl, mediaType);
     } else if (buttons && buttons.length > 0) {

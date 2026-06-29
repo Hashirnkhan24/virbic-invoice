@@ -11,6 +11,8 @@ import { getAuthUser } from '@/lib/auth';
 import { sendInvoiceEmail } from '@/lib/email-service';
 import { syncClientCounters } from '@/lib/db/invoice-hooks';
 import { logClientActivity } from '@/lib/db/client-analytics';
+import { compileTemplate } from '@/lib/whatsapp/template-compiler';
+import { sendWhatsAppMessage } from '@/lib/whatsapp/outbound';
 
 // Zod schema for invoice line item validation
 const invoiceLineItemSchema = z.object({
@@ -209,6 +211,98 @@ export async function POST(request: NextRequest) {
         await sendInvoiceEmail(createdInvoice.id, client.email, subject, message);
       } catch (emailErr: any) {
         console.error('[INVOICE POST API] Failed to auto-send email on creation:', emailErr.message);
+      }
+    }
+
+    // 8. Auto-send WhatsApp to client if invoice status is SENT, client has phone, and user has WhatsApp enabled
+    if (createdInvoice.status === 'SENT' && client.phone) {
+      try {
+        const preferences = await prisma.userPreference.findUnique({
+          where: { userId: user.id }
+        });
+        
+        if (preferences && preferences.whatsAppEnabled) {
+          const clientPhone = client.phone;
+          const digits = clientPhone.replace(/\D/g, '');
+          const withoutZero = digits.startsWith('0') ? digits.slice(1) : digits;
+          const normalizedPhone = withoutZero.length === 10 ? `+91${withoutZero}` : `+${withoutZero}`;
+
+          // Get or create conversation record
+          let conversation = await prisma.whatsAppConversation.findFirst({
+            where: {
+              userId: user.id,
+              clientId: client.id
+            }
+          });
+
+          if (!conversation) {
+            conversation = await prisma.whatsAppConversation.create({
+              data: {
+                userId: user.id,
+                clientId: client.id,
+                clientPhone: normalizedPhone,
+                status: 'ACTIVE',
+                optInStatus: 'CONFIRMED',
+                optInAt: new Date(),
+                optInMethod: 'invoice_delivery'
+              }
+            });
+          }
+
+          const systemTemplate = await prisma.whatsAppTemplate.findUnique({
+            where: { name: 'invoice_delivered' }
+          });
+
+          const fallbackContent = `*Invoice from {{businessName}}*\n\nInvoice #: {{invoiceNumber}}\nAmount: *₹{{amount}}*\nDue: {{dueDate}}\n\nView & Pay: {{invoiceLink}}\n\nQuestions? Reply here.`;
+          const templateContent = systemTemplate?.content || fallbackContent;
+
+          const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://virbic.com';
+          const invoiceLink = `${appUrl}/i/${createdInvoice.publicShareId}`;
+
+          const formattedDate = new Date(createdInvoice.dueDate).toLocaleDateString('en-IN', {
+            day: 'numeric',
+            month: 'short',
+            year: 'numeric'
+          });
+
+          const compiledMessage = compileTemplate(templateContent, {
+            clientName: client.name,
+            businessName: business.name,
+            invoiceNumber: createdInvoice.invoiceNumber,
+            amount: Number(createdInvoice.grandTotal).toFixed(2),
+            dueDate: formattedDate,
+            invoiceLink,
+            paymentLink: invoiceLink
+          });
+
+          // Variables must match: clientName, invoiceNumber, businessName, amount, dueDate, invoiceLink (6 variables)
+          const templateVariables = [
+            client.name,
+            createdInvoice.invoiceNumber,
+            business.name,
+            `₹${Number(createdInvoice.grandTotal).toFixed(2)}`,
+            formattedDate,
+            invoiceLink
+          ];
+
+          const buttonVariables = [createdInvoice.id];
+
+          await sendWhatsAppMessage({
+            to: normalizedPhone,
+            body: compiledMessage,
+            conversationId: conversation.id,
+            userId: user.id,
+            template: {
+              name: 'invoice_delivered',
+              variables: templateVariables,
+              buttonVariables: buttonVariables
+            }
+          });
+          
+          console.log(`[INVOICE POST API] Auto-sent WhatsApp for invoice ${createdInvoice.invoiceNumber} to ${normalizedPhone}`);
+        }
+      } catch (waErr: any) {
+        console.error('[INVOICE POST API] Failed to auto-send WhatsApp on creation:', waErr.message);
       }
     }
     // Sync client counters and log activity

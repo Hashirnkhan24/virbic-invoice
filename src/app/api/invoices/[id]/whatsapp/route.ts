@@ -119,6 +119,7 @@ export async function POST(
     const currentTemplateName = isReminder ? `payment_reminder_stage_${templateStage}` : 'invoice_delivered';
 
     let templateVariables: string[] = [];
+    let buttonVariables: string[] = [];
     if (!isReminder) {
       templateVariables = [
         invoice.client.name,
@@ -128,32 +129,37 @@ export async function POST(
         formattedDate,
         invoiceLink
       ];
+      buttonVariables = [invoice.id];
     } else {
       if (templateStage === 1) {
         templateVariables = [
           invoice.client.name,
           invoice.invoiceNumber,
           invoice.business.name,
-          `₹${Number(invoice.grandTotal).toFixed(2)}`,
+          Number(invoice.grandTotal).toFixed(2),
           formattedDate,
           invoiceLink
         ];
+        buttonVariables = [invoice.id];
       } else if (templateStage === 2) {
+        const outstandingAmount = Number(invoice.grandTotal) - Number(invoice.amountPaid || 0);
         templateVariables = [
           invoice.client.name,
           invoice.invoiceNumber,
-          `₹${Number(invoice.grandTotal).toFixed(2)}`,
+          outstandingAmount.toFixed(2),
           invoiceLink,
           invoice.business.name
         ];
       } else if (templateStage === 4) {
+        const outstandingAmount = Number(invoice.grandTotal) - Number(invoice.amountPaid || 0);
         templateVariables = [
           invoice.invoiceNumber,
           invoice.client.name,
-          `₹${Number(invoice.grandTotal).toFixed(2)}`,
+          outstandingAmount.toFixed(2),
           invoice.business.name,
           invoiceLink
         ];
+        buttonVariables = [invoice.id];
       }
     }
 
@@ -165,7 +171,8 @@ export async function POST(
       userId: user.id,
       template: {
         name: currentTemplateName,
-        variables: templateVariables
+        variables: templateVariables,
+        buttonVariables: buttonVariables
       }
     });
 

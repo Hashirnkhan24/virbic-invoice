@@ -66,10 +66,42 @@ export async function sendUserNotification({
   if (user && user.phone) {
     try {
       const { sendWhatsAppMessage } = await import('./whatsapp/outbound');
+      
+      let template: any = undefined;
+      
+      if (type === 'PAYMENT_PROOF_SUBMITTED' && data?.invoiceId && data?.proofId) {
+        // Fetch invoice and proof to get all required variables
+        const invoice = await prisma.invoice.findUnique({
+          where: { id: data.invoiceId },
+          include: { business: true, client: true }
+        });
+        const proof = await prisma.paymentProof.findUnique({
+          where: { id: data.proofId }
+        });
+        
+        if (invoice && proof) {
+          const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://virbic.com';
+          const dashboardUrl = `${appUrl}/payments`;
+          
+          template = {
+            name: 'freelancer_payment_proof_alert',
+            variables: [
+              invoice.business.name,
+              invoice.client.name,
+              invoice.invoiceNumber,
+              Number(proof.amountPaid).toFixed(2),
+              proof.utr,
+              dashboardUrl
+            ]
+          };
+        }
+      }
+      
       await sendWhatsAppMessage({
         to: user.phone,
         body: `🔔 *New Notification Alert!*\n\n*${title}*\n${body}`,
-        userId: user.id
+        userId: user.id,
+        template: template
       });
     } catch (waErr: any) {
       console.error('[NOTIFICATIONS] Failed to send WhatsApp alert to user:', waErr.message);

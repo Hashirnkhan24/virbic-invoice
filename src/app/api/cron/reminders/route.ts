@@ -130,31 +130,36 @@ export async function GET(request: NextRequest) {
           const invoiceLink = `${appUrl}/i/${invoice.publicShareId}`;
 
           let templateVariables: string[] = [];
+          let buttonVariables: string[] = [];
           if (templateStage === 1) {
             templateVariables = [
               invoice.client.name,
               invoice.invoiceNumber,
               invoice.business.name,
-              `₹${Number(invoice.grandTotal).toFixed(2)}`,
+              Number(invoice.grandTotal).toFixed(2),
               formattedDate,
               invoiceLink
             ];
+            buttonVariables = [invoice.id];
           } else if (templateStage === 2) {
+            const outstandingAmount = Number(invoice.grandTotal) - Number(invoice.amountPaid || 0);
             templateVariables = [
               invoice.client.name,
               invoice.invoiceNumber,
-              `₹${Number(invoice.grandTotal).toFixed(2)}`,
+              outstandingAmount.toFixed(2),
               invoiceLink,
               invoice.business.name
             ];
           } else if (templateStage === 4) {
+            const outstandingAmount = Number(invoice.grandTotal) - Number(invoice.amountPaid || 0);
             templateVariables = [
               invoice.invoiceNumber,
               invoice.client.name,
-              `₹${Number(invoice.grandTotal).toFixed(2)}`,
+              outstandingAmount.toFixed(2),
               invoice.business.name,
               invoiceLink
             ];
+            buttonVariables = [invoice.id];
           }
 
           await sendWhatsAppMessage({
@@ -164,7 +169,8 @@ export async function GET(request: NextRequest) {
             userId: invoice.userId,
             template: {
               name: currentTemplateName,
-              variables: templateVariables
+              variables: templateVariables,
+              buttonVariables: buttonVariables
             }
           });
         } catch (waErr: any) {
